@@ -1,0 +1,74 @@
+import { DrivePage } from './features/drive/DrivePage'
+import { ExamSheet } from './features/exam-sheet/ExamSheet'
+import { RouteEditor } from './features/routes/RouteEditor'
+import { RoutesPage } from './features/routes/RoutesPage'
+import { SettingsPage } from './features/settings/SettingsPage'
+import { StatsPage } from './features/stats/StatsPage'
+import type { Mode } from './domain/types'
+import { href, useHashRoute } from './lib/router'
+
+const NAV = [
+  { path: '', label: 'Útvonalak', match: ['', 'route', 'drive', 'sheet'] },
+  { path: 'review', label: 'Ismétlés', match: ['review'] },
+  { path: 'stats', label: 'Statisztika', match: ['stats'] },
+  { path: 'settings', label: 'Beállítások', match: ['settings'] },
+]
+
+export default function App() {
+  const { parts, query } = useHashRoute()
+  const [page = '', arg] = parts
+  const fullBleed = page === 'route' || page === 'drive' || page === 'review'
+
+  let content
+  switch (page) {
+    case '':
+      content = <RoutesPage />
+      break
+    case 'route':
+      content = <RouteEditor key={arg} routeId={arg ?? 'new'} />
+      break
+    case 'drive': {
+      const m = query.get('mode')
+      const mode: Mode = m === 'exam' ? 'exam' : 'practice'
+      content = <DrivePage key={`${arg}-${mode}-${location.hash}`} routeId={arg ?? null} mode={mode} />
+      break
+    }
+    case 'review':
+      content = <DrivePage key="review" routeId={null} mode="review" />
+      break
+    case 'sheet':
+      content = arg ? <ExamSheet sessionId={arg} /> : null
+      break
+    case 'stats':
+      content = <StatsPage />
+      break
+    case 'settings':
+      content = <SettingsPage />
+      break
+    default:
+      content = (
+        <p>
+          Nincs ilyen oldal. <a href={href('')}>Vissza</a>
+        </p>
+      )
+  }
+
+  return (
+    <div className="app">
+      <header className="topbar no-print">
+        <a className="brand" href={href('')}>
+          <img src="favicon.svg" alt="" width={28} height={28} />
+          KreszPass
+        </a>
+        <nav>
+          {NAV.map((n) => (
+            <a key={n.path} href={href(n.path)} className={n.match.includes(page) ? 'active' : ''}>
+              {n.label}
+            </a>
+          ))}
+        </nav>
+      </header>
+      <main className={fullBleed ? 'full' : 'narrow'}>{content}</main>
+    </div>
+  )
+}
