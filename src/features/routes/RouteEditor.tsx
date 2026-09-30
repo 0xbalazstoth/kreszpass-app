@@ -8,6 +8,8 @@ import { approachFrames, fetchSigns, mergeSigns } from '../../data/mapillary'
 import { loadOsmForRoute } from '../../data/osmSource'
 import { parseTrackFile, snapToRoads } from '../../data/routing'
 import { signForSituation } from '../../data/signs'
+import { normalizeStreetName } from '../../data/streetRoute'
+import { cleanRows, routeFromStreets } from '../../data/streetRouteSource'
 import { generateSituations, placeOnRoute } from '../../data/situations'
 import { allPromptVariants, KIND_LABEL, TURN_LABEL } from '../../domain/questions'
 import type { Route, Situation, SituationKind, Turn } from '../../domain/types'
@@ -16,6 +18,8 @@ import { formatDistance } from '../../lib/format'
 import { RouteGeom, type LngLat } from '../../lib/geo'
 import { href, navigate } from '../../lib/router'
 import { KIND_COLOR, KIND_ORDER } from './kinds'
+import { newRow, type EditableRow } from './streetRows'
+import { StreetRowsEditor } from './StreetRowsEditor'
 import { attemptsBySituation, HEALTH_COLOR, HEALTH_LABEL, situationHealth } from '../../domain/progress'
 
 type Mode = 'select' | 'waypoints' | 'situation'
@@ -47,6 +51,7 @@ export function RouteEditor({ routeId: param }: Props) {
   const fileInput = useRef<HTMLInputElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const [cancellable, setCancellable] = useState(false)
+  const [streetRows, setStreetRows] = useState<EditableRow[]>(() => [newRow(), newRow()])
 
   const liveSituations = useLiveQuery(() => situationsOf(routeId), [routeId])
   const situations = useMemo(() => liveSituations ?? [], [liveSituations])
@@ -69,6 +74,7 @@ export function RouteEditor({ routeId: param }: Props) {
       setName(r.name)
       setExamRouteId(r.examRouteId ?? '')
       setWaypoints(r.waypoints)
+      if (r.streets?.length) setStreetRows([...r.streets.map((x) => newRow(x.town, x.street)), newRow()])
       setLine(r.line)
       setCreatedAt(r.createdAt)
       setLoadedFromDb(true)
@@ -152,6 +158,8 @@ export function RouteEditor({ routeId: param }: Props) {
       examRouteId: examRouteId.trim() || undefined,
       line,
       waypoints,
+      // Az utcalista is megmarad, hogy később javítható legyen
+      streets: streetRows.filter((x) => x.street.trim()).map(({ town, street }) => ({ town: town.trim(), street: street.trim() })),
       createdAt,
       updatedAt: Date.now(),
     }
@@ -178,6 +186,26 @@ export function RouteEditor({ routeId: param }: Props) {
       setDirty(true)
       setMode('select')
       setStatus(`Útra illesztve: ${formatDistance(new RouteGeom(l).length)}`)
+    })
+
+  const onStreets = () =>
+    run('Utcák keresése…', async () => {
+      const ctrl = new AbortController()
+      abortRef.current = ctrl
+      setCancellable(true)
+      const r = await routeFromStreets(streetRows, { signal: ctrl.signal, onStatus: setBusy })
+      setLine(r.line)
+      setWaypoints(r.junctions)
+      setDirty(true)
+      setMode('select')
+      setFitKey(`streets-${Date.now()}`)
+      const typed = cleanRows(streetRows)
+      const renamed = r.matched.filter((m, i) => normalizeStreetName(m) !== normalizeStreetName(typed[i]?.street ?? ''))
+      setStatus(
+        `Útvonal az utcákból: ${formatDistance(r.lengthM)}, ${r.matched.length} utca, ${r.junctions.length} kanyarodás.` +
+          (renamed.length ? ` Értelmezve: ${renamed.join(', ')}.` : '') +
+          ' Most jöhet a helyzetfelismerés.',
+      )
     })
 
   const onStraight = () => {
@@ -352,6 +380,20 @@ export function RouteEditor({ routeId: param }: Props) {
                 e.target.value = ''
               }}
             />
+          </div>
+          <div className="streets">
+            <strong>Utcák alapján</strong>
+            <p className="hint">
+              Soronként a vizsgaútvonal egy utcája vagy útja, sorrendben (útszám is lehet: „1-es út”, „M0”). A települést elég az első
+              sorban megadni: az üresen hagyott a fölötte lévőé, csak akkor írd be újra, ha az útvonal másik településre vagy kerületbe
+              ér. Enter új sort nyit; egy egész lista is beilleszthető.
+            </p>
+            <StreetRowsEditor rows={streetRows} onChange={(r) => (setStreetRows(r), setDirty(true))} disabled={!!busy} />
+            <div className="actions">
+              <button className="btn primary" onClick={onStreets} disabled={!!busy || cleanRows(streetRows).length < 2}>
+                Útvonal az utcákból
+              </button>
+            </div>
           </div>
         </details>
 

@@ -9,8 +9,16 @@ export interface Route {
   line: LineString
   /** Kézzel lerakott útpontok (az útra illesztés előtti állapot) */
   waypoints: [number, number][]
+  /** Az utcanevekből összeállított útvonal bemenete (település + utca soronként), hogy később szerkeszthető legyen */
+  streets?: StreetRow[]
   createdAt: number
   updatedAt: number
+}
+
+/** Utcalista egy sora: település/kerület és utca vagy útszám. Üres település = a fölötte lévő soré. */
+export interface StreetRow {
+  town: string
+  street: string
 }
 
 export type SituationKind =

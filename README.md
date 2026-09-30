@@ -10,7 +10,10 @@ Minden felhasznált csomag nyílt forráskódú, minden szolgáltatás ingyenes,
 ## Használat
 
 1. **Új útvonal**: az *Útpontok* módban kattints a térképre a vizsgaútvonal mentén, majd *Útra illesztés*.
-   GPX vagy KML fájl is importálható.
+   GPX vagy KML fájl is importálható. Az *Utcák alapján* részben elég beírni a települést és a vizsgaútvonal
+   utcáit sorrendben (pl. „Budaörsi út – Villányi út – Fadrusz utca – Bartók Béla út”, útszám is lehet: „1-es út”):
+   az útvonal pontosan ezeken az utcákon halad, az egyirányú utcákat betartva. Ha két egymást követő utca nem
+   találkozik, a hibaüzenet megmondja, melyik utcán lehet átjutni.
 2. **Helyzetek felismerése**: az OpenStreetMap-adatokból felismeri a STOP és elsőbbségadás táblákat,
    lámpákat, zebrákat, körforgalmakat, sebességváltozásokat és a kanyarodásokat.
    Ahol az adatokban nincs tábla, az úttípusból következtet. Ezeket *ellenőrizendő* jelöli, nézd át őket.
@@ -112,6 +115,7 @@ iPhone-on Safariban megnyitva a *Megosztás → Hozzáadás a Főképernyőhöz*
 | Térkép | OpenFreeMap vektoros csempék, © OpenStreetMap közreműködők |
 | Táblák, lámpák, zebrák | Helyi OSM-csomag a Geofabrik kivonatából (ODbL); tartalék: Overpass API |
 | Útra illesztés | OSRM demó szerver |
+| Utcák helyének keresése (útvonal utcanevekből) | OpenStreetMap Nominatim (kulcs nélkül, legfeljebb 1 kérés/s) |
 | Utcakép (nem kötelező) | Mapillary Graph API, CC BY-SA képek |
 | KRESZ táblák | Wikimedia Commons, közkincs (PD-HU-exempt), a repóban tárolva |
 | Domborzat | Mapzen Terrarium csempék, AWS Open Data |

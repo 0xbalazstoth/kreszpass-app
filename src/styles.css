@@ -253,7 +253,8 @@ label.inline {
   color: var(--text);
 }
 input,
-select {
+select,
+textarea {
   font: inherit;
   color: var(--text);
   background: var(--surface);
@@ -269,6 +270,65 @@ input[type='checkbox'] {
 }
 label.inline input {
   width: 80px;
+}
+textarea {
+  resize: vertical;
+  line-height: 1.4;
+}
+/* Útvonal utcanevekből */
+.streets {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--border);
+}
+.street-rows {
+  display: grid;
+  gap: 6px;
+  justify-items: start;
+}
+.street-row {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1.15fr) minmax(0, 1.15fr) auto;
+  gap: 5px;
+  align-items: center;
+  width: 100%;
+}
+.street-row input {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  font-size: 0.92rem;
+}
+.street-head {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+.row-no {
+  font-size: 0.85rem;
+  color: var(--muted);
+  text-align: right;
+}
+.row-tools {
+  display: flex;
+  gap: 2px;
+}
+.icon-btn {
+  width: 22px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 .field-row {
   display: grid;

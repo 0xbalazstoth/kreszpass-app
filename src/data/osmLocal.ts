@@ -1,7 +1,7 @@
 import type { LineString } from 'geojson'
-import { RouteGeom } from '../lib/geo'
+import { RouteGeom, type BBox } from '../lib/geo'
 import { mergeOsm, type OsmData } from './osm'
-import { decodeTile, lonLatToTileFloat, tileKey, TILE_FORMAT_VERSION, type OsmIndexJson, type TileJson } from './osmTileFormat'
+import { decodeTile, lonLatToTile, lonLatToTileFloat, tileKey, TILE_FORMAT_VERSION, type OsmIndexJson, type TileJson } from './osmTileFormat'
 
 /**
  * Helyi (az apphoz csomagolt) OpenStreetMap-csempék betöltése. Ezeket a `npm run osm` készíti el
@@ -89,10 +89,28 @@ export interface LocalFetchOptions {
   fetchImpl?: FetchLike
 }
 
+/** Egy terület ([ny, d, k, é]) összes csempéje */
+export function tilesForBBox([w, s, e, n]: BBox, zoom: number): string[] {
+  const [x0, y0] = lonLatToTile(w, n, zoom)
+  const [x1, y1] = lonLatToTile(e, s, zoom)
+  const keys: string[] = []
+  for (let x = x0; x <= x1; x++) for (let y = y0; y <= y1; y++) keys.push(tileKey(x, y))
+  return keys
+}
+
 /** Az útvonalhoz szükséges helyi csempék betöltése (6 párhuzamosan) és összefésülése */
-export async function fetchLocalOsm(line: LineString, index: LocalIndex, opts: LocalFetchOptions = {}): Promise<OsmData> {
+export function fetchLocalOsm(line: LineString, index: LocalIndex, opts: LocalFetchOptions = {}): Promise<OsmData> {
+  return loadTiles(tilesForRoute(line, index.zoom), index, opts)
+}
+
+/** Egy terület helyi csempéinek betöltése (pl. az utcanevekből összeállított útvonalhoz) */
+export function fetchLocalOsmBBox(bbox: BBox, index: LocalIndex, opts: LocalFetchOptions = {}): Promise<OsmData> {
+  return loadTiles(tilesForBBox(bbox, index.zoom), index, opts)
+}
+
+async function loadTiles(wanted: string[], index: LocalIndex, opts: LocalFetchOptions): Promise<OsmData> {
   const fetchImpl = opts.fetchImpl ?? fetch
-  const keys = tilesForRoute(line, index.zoom).filter((k) => index.tiles.has(k))
+  const keys = wanted.filter((k) => index.tiles.has(k))
   const results: OsmData[] = []
   let done = 0
   opts.onProgress?.(0, keys.length)
