@@ -176,3 +176,14 @@ describe('mi látszik a kérdés pillanatában', () => {
     expect(Math.abs(angleInView(l, end.x, end.z, l.lookYaw))).toBeLessThan(HALF_FOV)
   })
 })
+
+describe('3D elrendezés – beépítés', () => {
+  it('az utca mentén a házak hézag nélkül sorakoznak, így nem látszik csupasz oldalfal a vezető előtt', () => {
+    const l = buildLayout({ layout: 'road', turn: 'straight', mySign: 'crossing', cars: [] })
+    for (const side of [1, -1]) {
+      const row = l.buildings.filter((b) => Math.sign(b.x) === side).sort((a, b) => b.z - a.z)
+      expect(row.length).toBeGreaterThan(5)
+      for (let i = 1; i < row.length; i++) expect(row[i - 1].z - row[i - 1].d / 2).toBeCloseTo(row[i].z + row[i].d / 2, 6)
+    }
+  })
+})

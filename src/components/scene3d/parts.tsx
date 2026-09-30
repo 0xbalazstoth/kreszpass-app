@@ -108,12 +108,13 @@ function SignFace({ code, size, y }: { code: string; size: number; y: number }) 
   const h = aspect >= 1 ? size / aspect : size
   return (
     <group position={[0, y, 0]}>
-      <mesh position={[0, 0, 0.03]}>
+      {/* Az oszlop (0,04 m sugarú) mögött: különben átlátszik a tábla közepén */}
+      <mesh position={[0, 0, 0.07]}>
         <planeGeometry args={[w, h]} />
         <meshBasicMaterial map={tex} transparent alphaTest={0.4} toneMapped={false} />
       </mesh>
       {/* Hátlap: sötét, a tábla körvonalával */}
-      <mesh position={[0, 0, 0.02]} rotation={[0, Math.PI, 0]}>
+      <mesh position={[0, 0, 0.06]} rotation={[0, Math.PI, 0]}>
         <planeGeometry args={[w, h]} />
         <meshBasicMaterial map={tex} color="#2b2f36" transparent alphaTest={0.4} />
       </mesh>

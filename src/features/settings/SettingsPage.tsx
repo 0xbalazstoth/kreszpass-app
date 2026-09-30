@@ -178,6 +178,10 @@ export function SettingsPage() {
           <label className="check">
             <input type="checkbox" checked={s.terrain} onChange={(e) => set({ terrain: e.target.checked })} /> Domborzat a térképen
           </label>
+          <label className="check">
+            <input type="checkbox" checked={s.examFeedback} onChange={(e) => set({ examFeedback: e.target.checked })} /> Próbavizsgán rövid
+            visszajelzés minden válasz után (kikapcsolva a valódi vizsgához hasonlóan csak a végén látod az eredményt)
+          </label>
         </div>
         <div className="actions">
           <button className="btn primary" onClick={save} disabled={!valid}>

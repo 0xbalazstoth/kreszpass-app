@@ -755,6 +755,13 @@ label.inline input {
 .feedback p {
   margin: 6px 0;
 }
+.feedback > .btn {
+  display: block;
+  margin-top: 10px;
+}
+.feedback-hidden {
+  margin-top: 12px;
+}
 .code-line .badge {
   margin-left: 6px;
 }

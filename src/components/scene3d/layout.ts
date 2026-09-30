@@ -134,8 +134,10 @@ function buildingsAlong(rng: () => number, arms: Array<{ axis: 'x' | 'z'; from: 
   const out: Building[] = []
   for (const arm of arms) {
     const dir = Math.sign(arm.to - arm.from)
-    for (let p = arm.from; dir > 0 ? p < arm.to : p > arm.to; p += dir * (9 + rng() * 5)) {
-      const w = 8 + rng() * 4
+    // Zárt sorú beépítés: a házak hézag nélkül követik egymást, így nem látszanak a vezető előtt
+    // felénk forduló, csupasz oldalfalak (egy hézagnál egy közeli ház oldala nagy szürke falnak tűnt)
+    for (let p = arm.from, w = 0; dir > 0 ? p < arm.to : p > arm.to; p += dir * w) {
+      w = Math.min(9 + rng() * 5, Math.abs(arm.to - p))
       const depth = 9 + rng() * 6
       const h = 7 + rng() * 16
       const color = BUILDING_COLORS[Math.floor(rng() * BUILDING_COLORS.length)]

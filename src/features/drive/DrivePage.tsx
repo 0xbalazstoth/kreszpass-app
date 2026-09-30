@@ -193,10 +193,8 @@ export function DrivePage({ routeId, mode }: Props) {
         const w = worstOutcome(mine)
         void recordReview(step.situation, w.outcome, w.reactionMs, settings)
       }
-      if (mode === 'exam') {
-        setPhase('feedback')
-        window.setTimeout(() => advance(all), 450)
-      } else setPhase('feedback')
+      // Minden módban a „Tovább” gombra (Enter) lép tovább, magától soha
+      setPhase('feedback')
     },
     // advance szándékosan kimarad: mindig a friss attempts listát kapja
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -278,7 +276,7 @@ export function DrivePage({ routeId, mode }: Props) {
           e.preventDefault()
           answer(n - 1)
         }
-      } else if (phase === 'feedback' && mode !== 'exam' && (e.key === 'Enter' || e.key === ' ')) {
+      } else if (phase === 'feedback' && (e.key === 'Enter' || e.key === ' ')) {
         e.preventDefault()
         advance()
       } else if (phase === 'intro' && e.key === 'Enter') start()
@@ -362,7 +360,14 @@ export function DrivePage({ routeId, mode }: Props) {
             <b>{formatSeconds(settings.timeoutMs)}</b> után vagy rossz válasznál: a lap megfelelő, többnyire 8-as (bukást okozó) kódja.
           </li>
         </ul>
-        {mode === 'exam' && <p>Próbavizsgán nincs közbenső visszajelzés. A végén megkapod a kitöltött minősítő lapot.</p>}
+        {mode === 'exam' && (
+          <p>
+            {settings.examFeedback
+              ? 'Próbavizsgán minden válasz után látod, helyes volt-e (magyarázat nélkül), és a „Tovább” gombbal (Enter) mész a következő helyzetre. A végén megkapod a kitöltött minősítő lapot.'
+              : 'Próbavizsgán nincs közbenső visszajelzés. A végén megkapod a kitöltött minősítő lapot.'}{' '}
+            <a href={href('settings')}>Beállítás</a>
+          </p>
+        )}
         {reviewCount > 0 && route && (
           <p className="status warn">
             {reviewCount} helyzet még ellenőrizendő a szerkesztőben. Ezeknél a kérdés típusa téves lehet.{' '}
@@ -484,7 +489,7 @@ export function DrivePage({ routeId, mode }: Props) {
               <ol className="options">
                 {step.prompt.options.map((o, i) => {
                   const chosen = last?.attempt.chosen === i
-                  const reveal = phase === 'feedback' && mode !== 'exam'
+                  const reveal = phase === 'feedback' && (mode !== 'exam' || t.examFeedback)
                   const cls = reveal ? (o.correct ? 'correct' : chosen ? 'wrong' : '') : chosen ? 'picked' : ''
                   return (
                     <li key={i}>
@@ -498,7 +503,7 @@ export function DrivePage({ routeId, mode }: Props) {
                 })}
               </ol>
               {phase === 'feedback' && mode !== 'exam' && last && <Feedback attempt={last.attempt} prompt={last.prompt} onNext={() => advance()} />}
-              {phase === 'feedback' && mode === 'exam' && <p className="muted">Rögzítve.</p>}
+              {phase === 'feedback' && mode === 'exam' && last && <Feedback attempt={last.attempt} compact hidden={!t.examFeedback} onNext={() => advance()} />}
             </div>
           )}
         </div>
@@ -507,19 +512,36 @@ export function DrivePage({ routeId, mode }: Props) {
   )
 }
 
-function Feedback({ attempt, prompt, onNext }: { attempt: Attempt; prompt: Prompt; onNext: () => void }) {
-  const title: Record<Attempt['outcome'], string> = {
-    ok: 'Helyes, időben',
-    late: 'Helyes, de kissé késve',
-    slow: 'Helyes, de lassan',
-    wrong: 'Hibás válasz',
-    timeout: 'Nem válaszoltál időben',
-  }
+const OUTCOME_TITLE: Record<Attempt['outcome'], string> = {
+  ok: 'Helyes, időben',
+  late: 'Helyes, de kissé késve',
+  slow: 'Helyes, de lassan',
+  wrong: 'Hibás válasz',
+  timeout: 'Nem válaszoltál időben',
+}
+
+/**
+ * Visszajelzés a válasz után. Próbavizsgán (compact) csak az eredmény és a kód, magyarázat nélkül;
+ * ha a visszajelzés ki van kapcsolva (hidden), csak annyi, hogy a válasz rögzítve.
+ */
+function Feedback({ attempt, prompt, onNext, compact, hidden }: { attempt: Attempt; prompt?: Prompt; onNext: () => void; compact?: boolean; hidden?: boolean }) {
+  const next = (
+    <button className="btn primary" onClick={onNext} autoFocus>
+      Tovább (Enter)
+    </button>
+  )
+  if (hidden)
+    return (
+      <div className="feedback-hidden">
+        <p className="muted">Rögzítve.</p>
+        {next}
+      </div>
+    )
   const good = attempt.outcome === 'ok'
   return (
     <div className={`feedback ${good ? 'good' : attempt.outcome === 'late' || attempt.outcome === 'slow' ? 'meh' : 'bad'}`}>
       <strong>
-        {title[attempt.outcome]}
+        {OUTCOME_TITLE[attempt.outcome]}
         {attempt.reactionMs !== null && ` · ${formatSeconds(attempt.reactionMs)}`}
       </strong>
       {attempt.codes.map((c) => (
@@ -528,13 +550,13 @@ function Feedback({ attempt, prompt, onNext }: { attempt: Attempt; prompt: Promp
           {EVAL_CODES[c]?.fatal && <span className="badge bad">bukás</span>}
         </p>
       ))}
-      <div className="feedback-body">
-        <SceneView scene={prompt.scene} className="feedback-scene" />
-        <p>{prompt.explanation}</p>
-      </div>
-      <button className="btn primary" onClick={onNext} autoFocus>
-        Tovább (Enter)
-      </button>
+      {!compact && prompt && (
+        <div className="feedback-body">
+          <SceneView scene={prompt.scene} className="feedback-scene" />
+          <p>{prompt.explanation}</p>
+        </div>
+      )}
+      {next}
     </div>
   )
 }

@@ -114,6 +114,8 @@ export interface Settings {
   terrain: boolean
   /** Táblafelismerő gyakorlás: ennyi ideig látszik a tábla (ms) */
   signFlashMs: number
+  /** Próbavizsgán minden válasz után rövid visszajelzés (helyes-e, kód), magyarázat nélkül */
+  examFeedback: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -126,4 +128,5 @@ export const DEFAULT_SETTINGS: Settings = {
   view3d: true,
   terrain: true,
   signFlashMs: 1200,
+  examFeedback: true,
 }
