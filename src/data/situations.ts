@@ -1,6 +1,7 @@
 import type { LineString, Position } from 'geojson'
 import type { Situation, SituationKind, Turn } from '../domain/types'
 import { angleDiff, bboxContains, bboxOf, RouteGeom, turnDelta, type BBox, type LngLat } from '../lib/geo'
+import { parseTrafficSign } from './signs'
 import {
   highwayRank,
   isDrivableWay,
@@ -32,6 +33,12 @@ const OWN_SIGN_SNAP = 7
 const SIGNAL_MERGE = 45
 /** Kanyarodásnak számító irányváltozás (fok) */
 const TURN_ANGLE = 35
+/** Vasúti átjáró ennyin belül az útvonalhoz (m) */
+const RAIL_SNAP = 8
+/** Jelzőtábla ennyin belül az útvonal mellett (m) */
+const SIGN_SNAP = 12
+/** Jelzőtáblák ennyivel a helyzet előtt számítanak a helyzethez (m) */
+const SIGN_BEFORE = 80
 
 interface PreparedWay {
   way: OsmWay
@@ -80,6 +87,11 @@ function sameRoad(a: OsmWay, b: OsmWay): boolean {
 
 function isYesish(v: string | undefined): boolean {
   return v === 'designated' || v === 'yes'
+}
+
+function isOneway(w: OsmWay | undefined): boolean {
+  const v = w?.tags?.oneway
+  return v === 'yes' || v === '1' || v === 'true' || isRoundaboutWay(w)
 }
 
 /**
@@ -290,7 +302,74 @@ export function generateSituations(line: LineString, osm: OsmData, opts: Generat
     } else pending = { v, d: s.d, count: 1 }
   }
 
-  return dedupe(out.sort((a, b) => a.d - b.d))
+  // ------------------------------------------------ Vasúti átjárók
+  const railDs: number[] = []
+  for (const n of nodes) {
+    const t = n.tags ?? {}
+    if (t.railway !== 'level_crossing') continue
+    const pr = geom.project([n.lon, n.lat])
+    if (pr.dist > RAIL_SNAP || pr.d < 30 || railDs.some((x) => Math.abs(x - pr.d) < 30)) continue
+    railDs.push(pr.d)
+    const barrier = Boolean(t['crossing:barrier']) && t['crossing:barrier'] !== 'no'
+    // A fényjelző hiánya ritkán van jelölve; ha nincs adat, fénysorompót feltételezünk (ez a leggyakoribb)
+    const lights = t['crossing:light'] !== 'no'
+    out.push(make(pr.d, 'rail_crossing', { rail: { barrier, lights }, needsReview: !t['crossing:barrier'] && !t['crossing:light'] }))
+  }
+
+  const list = dedupe(out.sort((a, b) => a.d - b.d))
+  attachRealSigns(list, nodes, geom, wayAt)
+  return list
+}
+
+/**
+ * A helyszínen valóban álló táblák: a kitáblázott (traffic_sign) pontok a helyzet előtti szakaszon, az út jobb oldalán,
+ * valamint az adatokból biztosan levezethetők (főútvonal, egyirányú célút).
+ */
+function attachRealSigns(list: Situation[], nodes: OsmNode[], geom: RouteGeom, wayAt: (d: number) => OsmWay | undefined) {
+  const signNodes = nodes
+    .map((n) => ({ n, codes: parseTrafficSign(n.tags) }))
+    .filter((x) => x.codes.length)
+    .map((x) => ({ ...x, pr: geom.project([x.n.lon, x.n.lat]) }))
+    .filter((x) => x.pr.dist <= SIGN_SNAP)
+  list.forEach((s, i) => {
+    const codes: string[] = []
+    const from = Math.max(s.d - SIGN_BEFORE, i > 0 ? list[i - 1].d + 5 : 0)
+    for (const x of signNodes) {
+      if (x.pr.d < from || x.pr.d > s.d + 5) continue
+      // Az úttesten lévő (≤ 2 m) pont bármelyik irányra vonatkozhat; a távolabbiak közül csak a jobb oldaliak a mieink
+      if (x.pr.dist > 2 && sideOf(geom, x.pr.d, [x.n.lon, x.n.lat]) < 0) continue
+      for (const c of x.codes) {
+        const code = c === 'city_limit' ? cityLimitCode(wayAt(x.pr.d - 30), wayAt(x.pr.d + 30)) : c
+        if (!codes.includes(code)) codes.push(code)
+      }
+    }
+    const approach = wayAt(s.d - 15)
+    if (s.kind === 'priority' && isYesish(approach?.tags?.priority_road) && !codes.includes('B-003')) codes.push('B-003')
+    // Kanyarodás után egyirányú utcába hajtunk: a bejáratánál „Egyirányú forgalmú út” tábla áll
+    if (s.turn !== 'straight' && isOneway(wayAt(s.d + 30)) && !isRoundaboutWay(wayAt(s.d + 30))) codes.push('E-012')
+    if (codes.length) s.signs = codes
+  })
+}
+
+/** Az útvonal melyik oldalán van a pont: + jobb, − bal */
+function sideOf(geom: RouteGeom, d: number, p: LngLat): number {
+  const a = geom.pointAt(Math.max(0, d - 5))
+  const b = geom.pointAt(Math.min(geom.length, d + 5))
+  const kx = Math.cos((a[1] * Math.PI) / 180)
+  const vx = (b[0] - a[0]) * kx
+  const vy = b[1] - a[1]
+  const wx = (p[0] - a[0]) * kx
+  const wy = p[1] - a[1]
+  // Kelet–észak koordinátákban a jobb oldal a negatív keresztszorzat
+  return -(vx * wy - vy * wx)
+}
+
+/** A „lakott terület” tábla kezdete vagy vége: a sebességkorlát csökkenése belépést jelez */
+function cityLimitCode(before: OsmWay | undefined, after: OsmWay | undefined): string {
+  const vb = parseMaxspeed(before?.tags)
+  const va = parseMaxspeed(after?.tags)
+  if (vb !== null && va !== null && va > vb) return 'E-021'
+  return 'E-020'
 }
 
 function metersApprox(a: LngLat, b: LngLat): number {

@@ -5,11 +5,14 @@ import { SceneView } from '../../components/SceneView'
 import { DriveScene } from '../../components/scene3d'
 import { preloadScene3D } from '../../components/scene3d/load'
 import { approachFrames, type MlImage } from '../../data/mapillary'
+import { describeExpected, expectedActions, scoreActions, type ActionEvent, type ActionKind, type ActionResult } from '../../domain/actions'
 import { EVAL_CODES } from '../../domain/evalCodes'
+import { EXAMINER_LEAD_M, examinerLine } from '../../domain/examiner'
+import { attemptsBySituation, weakest } from '../../domain/progress'
 import { buildPrompts, KIND_LABEL, type Prompt } from '../../domain/questions'
 import { classifyAnswer } from '../../domain/scoring'
 import type { Attempt, ExamSession, Mode, Route, Settings, Situation } from '../../domain/types'
-import { db, getSettings, situationsOf } from '../../db'
+import { db, getSettings, saveSettings, situationsOf } from '../../db'
 import { formatSeconds } from '../../lib/format'
 import { RouteGeom, type LngLat } from '../../lib/geo'
 import { href, navigate } from '../../lib/router'
@@ -27,16 +30,48 @@ interface Step {
 
 type Phase = 'loading' | 'empty' | 'intro' | 'approach' | 'question' | 'feedback' | 'saving'
 
-const MODE_LABEL: Record<Mode, string> = { practice: 'Gyakorlás', exam: 'Próbavizsga', review: 'Ismétlés' }
+const MODE_LABEL: Record<Mode, string> = { practice: 'Gyakorlás', exam: 'Próbavizsga', review: 'Ismétlés', tour: 'Teljes útvonal' }
 /** Legfeljebb ennyit várunk az utcaképekre a közeledés elején */
 const FRAME_WAIT_MS = 1200
+/** Mozdulatok billentyűi: M = tükör, nyilak = index, szóköz / lefelé nyíl = fék */
+const ACTION_KEYS: Record<string, ActionKind> = {
+  m: 'mirror',
+  M: 'mirror',
+  ArrowLeft: 'indicator_left',
+  ArrowRight: 'indicator_right',
+  ' ': 'brake',
+  ArrowDown: 'brake',
+}
+/** Mozdulat-gyakorlásnál legalább ennyi idő kell a tükörre, indexre, fékre */
+const ACTION_APPROACH_MS = 5000
+/** Teljes útvonalon egy szakasz legfeljebb ennyi ideig tart (hosszú egyenesek) */
+const TOUR_MAX_MS = 45_000
+/** A térképes repülés a helyzet előtt ennyivel áll meg (m) */
+const STOP_BEFORE_M = 14
 
-/** Első személyű kamera-út a térképen: a helyzet előtti 150 m, 5 méterenként */
-function flyPathFor(line: LineString, s: Situation, durationMs: number): FlyAlong | null {
+/**
+ * A közeledés terve: honnan (útvonal-távolság, m) és mennyi ideig tart.
+ * Teljes útvonalon az előző helyzettől folyamatosan halad a beállított sebességgel.
+ */
+function approachPlan(step: Step, prevD: number | null, settings: Settings, mode: Mode, actions: boolean): { fromD: number; durationMs: number } {
+  const s = step.situation
+  let durationMs = settings.approachMs
+  let fromD = s.d - 150
+  if (mode === 'tour') {
+    fromD = Math.max(0, (prevD ?? 0) + (prevD === null ? 0 : 2))
+    const dist = Math.max(0, s.d - STOP_BEFORE_M - fromD)
+    durationMs = Math.min(TOUR_MAX_MS, Math.max(settings.approachMs, (dist / (settings.tourSpeedKmh / 3.6)) * 1000))
+  }
+  if (actions && expectedActions(s)) durationMs = Math.max(durationMs, ACTION_APPROACH_MS)
+  return { fromD, durationMs }
+}
+
+/** Első személyű kamera-út a térképen (alapból a helyzet előtti 150 m), 5 méterenként */
+function flyPathFor(line: LineString, s: Situation, durationMs: number, fromD = s.d - 150): FlyAlong | null {
   try {
     const geom = new RouteGeom(line)
-    const end = Math.max(0, s.d - 14)
-    const begin = Math.max(0, s.d - 150)
+    const end = Math.max(0, s.d - STOP_BEFORE_M)
+    const begin = Math.max(0, Math.min(fromD, end - 10))
     if (end - begin < 10) return null
     const path: LngLat[] = []
     const bearings: number[] = []
@@ -74,9 +109,14 @@ function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
 interface Props {
   routeId: string | null
   mode: Mode
+  /** 'weak': csak a leggyengébb helyzetek */
+  focus?: 'weak'
 }
 
-export function DrivePage({ routeId, mode }: Props) {
+/** Gyenge pontok gyakorlásakor ennyi helyzet jön */
+const WEAK_COUNT = 10
+
+export function DrivePage({ routeId, mode, focus }: Props) {
   const [phase, setPhase] = useState<Phase>('loading')
   const [settings, setSettings] = useState<Settings | null>(null)
   const [route, setRoute] = useState<Route | null>(null)
@@ -93,6 +133,15 @@ export function DrivePage({ routeId, mode }: Props) {
   const [voiceError, setVoiceError] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [mainView, setMainView] = useState<'scene' | 'map'>('scene')
+  // Mozdulat-gyakorlás (tükör, index, fék) és a teljes útvonal vizsgabiztosa
+  const [actionsOn, setActionsOn] = useState(false)
+  const [examinerOn, setExaminerOn] = useState(true)
+  const [pressed, setPressed] = useState<ActionKind[]>([])
+  const [actionResult, setActionResult] = useState<{ situationId: string; result: ActionResult; expected: string } | null>(null)
+  /** Teljes útvonalon a 3D jelenet csak a helyzet előtti utolsó szakaszon jelenik meg */
+  const [sceneShown, setSceneShown] = useState(true)
+  const actionEvents = useRef<ActionEvent[]>([])
+  const approachStart = useRef(0)
   const questionStart = useRef(0)
   const timeoutRef = useRef<number | undefined>(undefined)
   const startedAt = useRef(Date.now())
@@ -115,6 +164,10 @@ export function DrivePage({ routeId, mode }: Props) {
         if (!cancelled) setRoute(r)
         lineMap[r.id] = r.line
         list = await situationsOf(r.id)
+        if (focus === 'weak') {
+          const sessions = await db.sessions.toArray()
+          list = weakest(list, attemptsBySituation(sessions.flatMap((x) => x.attempts)), WEAK_COUNT)
+        }
       }
       const built: Step[] = []
       for (const s of list) {
@@ -123,6 +176,8 @@ export function DrivePage({ routeId, mode }: Props) {
       }
       if (cancelled) return
       setSettings(st)
+      setActionsOn(st.actionDrill)
+      setExaminerOn(st.examinerVoice)
       setLines(lineMap)
       setSteps(built)
       setReviewCount(list.filter((s) => s.needsReview).length)
@@ -134,24 +189,80 @@ export function DrivePage({ routeId, mode }: Props) {
     return () => {
       cancelled = true
     }
-  }, [routeId, mode])
+  }, [routeId, mode, focus])
 
   const step = steps[idx] as Step | undefined
   const line = step ? lines[step.situation.routeId] : undefined
   const token = settings?.mapillaryToken ?? ''
+  const prevD = idx > 0 && steps[idx - 1].situation.routeId === step?.situation.routeId ? steps[idx - 1].situation.d : null
+  const plan = useMemo(
+    () => (step && settings ? approachPlan(step, prevD, settings, mode, actionsOn) : null),
+    [step, prevD, settings, mode, actionsOn],
+  )
+  /** Ennél a helyzetnél van-e mozdulat-gyakorlás */
+  const drill = actionsOn && step?.firstOfSituation ? expectedActions(step.situation) : null
 
   // ------------------------------------------------ Közeledés
   useEffect(() => {
-    if (phase !== 'approach' || !step || !settings) return
+    if (phase !== 'approach' || !step || !settings || !plan) return
     let cancelled = false
     const timers: number[] = []
-    const duration = settings.approachMs
+    const duration = plan.durationMs
+    const s = step.situation
     // A következő helyzet képeit előre betöltjük
-    const next = steps.slice(idx + 1).find((s) => s.firstOfSituation)
+    const next = steps.slice(idx + 1).find((x) => x.firstOfSituation)
     if (token && next && lines[next.situation.routeId]) void framesFor(token, lines[next.situation.routeId], next.situation)
 
+    actionEvents.current = []
+    approachStart.current = performance.now()
+    setPressed([])
+    setActionResult(null)
+
+    if (mode === 'tour') {
+      // Hosszú szakaszon a térkép vezet, a 3D jelenet a helyzet előtti utolsó szakaszon jelenik meg
+      setSceneShown(false)
+      setMainView('map')
+      timers.push(
+        window.setTimeout(() => {
+          if (cancelled) return
+          setSceneShown(true)
+          setMainView('scene')
+        }, Math.max(0, duration - settings.approachMs)),
+      )
+      const say = examinerOn ? examinerLine(s, idx === 0) : null
+      if (say) {
+        // Mint a vizsgán: kb. 120 m-rel a kereszteződés előtt szól
+        const dist = Math.max(0, s.d - STOP_BEFORE_M - plan.fromD)
+        const delay = Math.max(0, ((dist - EXAMINER_LEAD_M) / (settings.tourSpeedKmh / 3.6)) * 1000)
+        timers.push(window.setTimeout(() => !cancelled && speak(say), idx === 0 ? 0 : delay))
+      }
+    }
+
     // A 3D jelenet és a térképes repülés ugyanennyi ideig tart, utána jön a kérdés
-    timers.push(window.setTimeout(() => !cancelled && setPhase('question'), duration))
+    timers.push(
+      window.setTimeout(() => {
+        if (cancelled) return
+        const exp = drill
+        if (exp) {
+          const result = scoreActions(exp, actionEvents.current, duration)
+          setActionResult({ situationId: s.id, result, expected: describeExpected(exp) })
+          setAttempts((prev) => [
+            ...prev,
+            {
+              situationId: s.id,
+              promptId: 'actions',
+              promptTitle: 'Mozdulatok (tükör, index, fék)',
+              reactionMs: null,
+              chosen: null,
+              outcome: result.outcome,
+              codes: result.codes,
+              at: Date.now(),
+            },
+          ])
+        }
+        setPhase('question')
+      }, duration),
+    )
     if (token && line) {
       const began = performance.now()
       void withTimeout(framesFor(token, line, step.situation), Math.min(FRAME_WAIT_MS, duration / 2), []).then((fr) => {
@@ -166,7 +277,15 @@ export function DrivePage({ routeId, mode }: Props) {
       cancelled = true
       timers.forEach(clearTimeout)
     }
+    // A közeledés a fázis és a lépés változásakor indul; a drill és a terv ebből következik
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, step, settings, token, line, idx, steps, lines])
+
+  /** Egy mozdulat rögzítése (billentyű vagy gomb) */
+  const act = useCallback((kind: ActionKind) => {
+    actionEvents.current.push({ kind, t: performance.now() - approachStart.current })
+    setPressed((p) => [...p.filter((k) => !(k.startsWith('indicator') && kind.startsWith('indicator'))), kind])
+  }, [])
 
   // ------------------------------------------------ Válasz
   const answer = useCallback(
@@ -270,7 +389,13 @@ export function DrivePage({ routeId, mode }: Props) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return
-      if (phase === 'question' && step) {
+      if (phase === 'approach' && drill) {
+        const kind = ACTION_KEYS[e.key]
+        if (kind) {
+          e.preventDefault()
+          if (!e.repeat) act(kind)
+        }
+      } else if (phase === 'question' && step) {
         const n = Number(e.key)
         if (n >= 1 && n <= step.prompt.options.length) {
           e.preventDefault()
@@ -308,10 +433,10 @@ export function DrivePage({ routeId, mode }: Props) {
 
   const situationId = step?.situation.id
   const fly = useMemo(
-    () => (step && line && settings ? flyPathFor(line, step.situation, settings.approachMs) : null),
+    () => (step && line && plan ? flyPathFor(line, step.situation, plan.durationMs, plan.fromD) : null),
     // Helyzetenként egyszer repülünk
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [situationId, line, settings?.approachMs],
+    [situationId, line, plan?.durationMs, plan?.fromD],
   )
 
   // ------------------------------------------------ Megjelenítés
@@ -338,14 +463,25 @@ export function DrivePage({ routeId, mode }: Props) {
     return (
       <section className="intro card">
         <h1>
-          {MODE_LABEL[mode]}
+          {focus === 'weak' ? 'Gyenge pontok' : MODE_LABEL[mode]}
           {route ? `: ${route.name}` : ''}
         </h1>
-        <p>
-          {situationCount} helyzet, {steps.length} kérdés. Minden helyzet előtt „közeledsz”
-          {settings.view3d ? ' a 3D nézetben' : ' a vázlaton'}, közben a térkép a valódi útvonaladon repül végig
-          {token ? ' (Mapillary utcaképekkel, ha vannak)' : ''}. Utána a kérdésre időre kell válaszolnod.
-        </p>
+        {focus === 'weak' && (
+          <p className="hint">A korábbi válaszaid alapján a leggyengébb {situationCount} helyzet jön, az útvonal sorrendjében.</p>
+        )}
+        {mode === 'tour' ? (
+          <p>
+            Végigvezetünk a teljes útvonalon, {settings.tourSpeedKmh} km/h-val, megszakítás nélkül: a térkép a valódi útvonalon halad, a
+            vizsgabiztos hangosan mondja az irányt, mint a vizsgán. Minden helyzetnél megállsz, a 3D nézetben körülnézel, és időre
+            válaszolsz. {situationCount} helyzet, {steps.length} kérdés.
+          </p>
+        ) : (
+          <p>
+            {situationCount} helyzet, {steps.length} kérdés. Minden helyzet előtt „közeledsz”
+            {settings.view3d ? ' a 3D nézetben' : ' a vázlaton'}, közben a térkép a valódi útvonaladon repül végig
+            {token ? ' (Mapillary utcaképekkel, ha vannak)' : ''}. Utána a kérdésre időre kell válaszolnod.
+          </p>
+        )}
         <ul className="rules">
           <li>
             <b>{formatSeconds(settings.okMs)}</b> alatt helyes válasz: nincs hiba.
@@ -376,6 +512,31 @@ export function DrivePage({ routeId, mode }: Props) {
         )}
         <div className="toggles">
           <label className="check">
+            <input
+              type="checkbox"
+              checked={actionsOn}
+              onChange={(e) => {
+                setActionsOn(e.target.checked)
+                void saveSettings({ actionDrill: e.target.checked })
+              }}
+            />{' '}
+            Mozdulatok gyakorlása: kereszteződés előtt tükör (<kbd>M</kbd>), index (<kbd>←</kbd> <kbd>→</kbd>), fékezés (<kbd>Szóköz</kbd>). A
+            sorrendet és az időzítést a minősítő lap szerint értékeljük (4/4, 4/5, 6/8, 8/6, 8/30).
+          </label>
+          {mode === 'tour' && (
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={examinerOn}
+                onChange={(e) => {
+                  setExaminerOn(e.target.checked)
+                  void saveSettings({ examinerVoice: e.target.checked })
+                }}
+              />{' '}
+              A vizsgabiztos hangos utasításai („A következő kereszteződésnél forduljon balra.”)
+            </label>
+          )}
+          <label className="check">
             <input type="checkbox" checked={readAloud} onChange={(e) => setReadAloud(e.target.checked)} /> Kérdések felolvasása
           </label>
           {voiceSupported && (
@@ -405,9 +566,16 @@ export function DrivePage({ routeId, mode }: Props) {
   const progress = `${idx + 1} / ${steps.length}`
   const t = settings
 
+  // Teljes útvonalon a 3D jelenet a helyzet előtti utolsó szakaszon indul; mozdulat-gyakorlásnál a hosszabb közeledéshez igazodik
+  const sceneMs = mode === 'tour' ? t.approachMs : (plan?.durationMs ?? t.approachMs)
+  const sceneVisible = mode !== 'tour' || phase !== 'approach' || sceneShown
   const scenePane = (
     <div className={`pane ${mainView === 'scene' ? 'pane-main' : 'pane-inset'}`}>
-      <DriveScene key={idx} scene={step.prompt.scene} animate={step.firstOfSituation} approachMs={t.approachMs} enabled={t.view3d} />
+      {sceneVisible ? (
+        <DriveScene key={idx} scene={step.prompt.scene} animate={step.firstOfSituation} approachMs={sceneMs} enabled={t.view3d} />
+      ) : (
+        <div className="scene-wait">A 3D nézet a következő helyzet előtt jelenik meg</div>
+      )}
       {mainView !== 'scene' && (
         <button className="pane-swap" onClick={() => setMainView('scene')} aria-label="3D nézet nagyban">
           ⤢
@@ -466,10 +634,16 @@ export function DrivePage({ routeId, mode }: Props) {
         <div className="drive-visual">
           {scenePane}
           {mapPane}
+          {phase === 'approach' && drill && <ActionBar pressed={pressed} onAct={act} />}
         </div>
 
         <div className="drive-side">
           {phase === 'approach' && <p className="approaching">Közeledés…</p>}
+          {phase === 'approach' && drill && (
+            <p className="hint">
+              Most végezd el a mozdulatokat: tükör <kbd>M</kbd>, index <kbd>←</kbd> <kbd>→</kbd>, fékezés <kbd>Szóköz</kbd>.
+            </p>
+          )}
           {showQuestion && (
             <div className="question">
               <h2>{step.prompt.title}</h2>
@@ -502,6 +676,11 @@ export function DrivePage({ routeId, mode }: Props) {
                   )
                 })}
               </ol>
+              {phase === 'feedback' &&
+                (mode !== 'exam' || t.examFeedback) &&
+                actionResult &&
+                actionResult.situationId === step.situation.id &&
+                step.firstOfSituation && <ActionFeedback result={actionResult.result} expected={actionResult.expected} />}
               {phase === 'feedback' && mode !== 'exam' && last && <Feedback attempt={last.attempt} prompt={last.prompt} onNext={() => advance()} />}
               {phase === 'feedback' && mode === 'exam' && last && <Feedback attempt={last.attempt} compact hidden={!t.examFeedback} onNext={() => advance()} />}
             </div>
@@ -509,6 +688,52 @@ export function DrivePage({ routeId, mode }: Props) {
         </div>
       </div>
     </section>
+  )
+}
+
+const ACTION_BUTTONS: Array<{ kind: ActionKind; label: string; key: string }> = [
+  { kind: 'mirror', label: 'Tükör', key: 'M' },
+  { kind: 'indicator_left', label: '◀ Index', key: '←' },
+  { kind: 'brake', label: 'Fék', key: 'Szóköz' },
+  { kind: 'indicator_right', label: 'Index ▶', key: '→' },
+]
+
+/** Mozdulatok gombjai (érintőképernyőre is); a bekapcsolt index villog */
+function ActionBar({ pressed, onAct }: { pressed: ActionKind[]; onAct: (k: ActionKind) => void }) {
+  return (
+    <div className="action-bar" role="group" aria-label="Mozdulatok">
+      {ACTION_BUTTONS.map((b) => (
+        <button
+          key={b.kind}
+          className={`act ${pressed.includes(b.kind) ? 'on' : ''} ${b.kind.startsWith('indicator') ? 'indicator' : ''}`}
+          // A gomb ne vegye el a fókuszt, különben a szóköz újra „megnyomná”
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={() => onAct(b.kind)}
+        >
+          {b.label} <kbd>{b.key}</kbd>
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/** A mozdulatok értékelése a helyzet első kérdése után */
+function ActionFeedback({ result, expected }: { result: ActionResult; expected: string }) {
+  const cls = result.outcome === 'ok' ? 'good' : result.outcome === 'wrong' ? 'bad' : 'meh'
+  return (
+    <div className={`feedback ${cls} action-feedback`}>
+      <strong>Mozdulatok: {result.outcome === 'ok' ? 'hibátlan' : 'hibás'}</strong>
+      <p className="muted">Helyesen: {expected}</p>
+      {result.notes.map((n) => (
+        <p key={n}>{n}</p>
+      ))}
+      {result.codes.map((c) => (
+        <p key={c} className="code-line">
+          <code>{c}</code> {EVAL_CODES[c]?.text}
+          {EVAL_CODES[c]?.fatal && <span className="badge bad">bukás</span>}
+        </p>
+      ))}
+    </div>
   )
 }
 

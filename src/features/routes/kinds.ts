@@ -9,6 +9,7 @@ export const KIND_COLOR: Record<SituationKind, string> = {
   roundabout: '#0369a1',
   crossing: '#0891b2',
   speed_change: '#be185d',
+  rail_crossing: '#4b5563',
 }
 
-export const KIND_ORDER: SituationKind[] = ['stop', 'give_way', 'priority', 'equal', 'signals', 'roundabout', 'crossing', 'speed_change']
+export const KIND_ORDER: SituationKind[] = ['stop', 'give_way', 'priority', 'equal', 'signals', 'roundabout', 'crossing', 'speed_change', 'rail_crossing']

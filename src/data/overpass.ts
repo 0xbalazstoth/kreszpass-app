@@ -73,6 +73,8 @@ export function buildQuery(line: LineString, maxPoints = MAX_POINTS): string {
 (
   way(around:30,${poly})[highway~"${hw}"];
   node(around:45,${poly})[highway~"^(stop|give_way|traffic_signals|crossing|mini_roundabout)$"];
+  node(around:45,${poly})[railway=level_crossing];
+  node(around:45,${poly})[traffic_sign];
 );
 out body geom;`
 }

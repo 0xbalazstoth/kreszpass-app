@@ -1,6 +1,8 @@
 import type { Situation, Turn } from './types'
 
-export type SignType = 'stop' | 'give_way' | 'priority_road' | 'speed' | 'crossing' | 'roundabout'
+export type SignType = 'stop' | 'give_way' | 'priority_road' | 'speed' | 'crossing' | 'roundabout' | 'rail'
+/** Vasúti átjáró fényjelzője: villogó piros (tilos), villogó fehér (szabad), vagy nincs fényjelző */
+export type RailLight = 'red_flash' | 'white_flash' | 'none'
 export type LightState = 'green' | 'yellow' | 'red' | 'red_yellow' | 'flashing_yellow'
 export type Side = 'left' | 'right' | 'ahead'
 
@@ -25,6 +27,10 @@ export interface Scene {
   /** Mellettünk álló, kilátást takaró jármű */
   blocker?: boolean
   speed?: number
+  /** A helyszínen valóban álló további táblák (OSM), a fő tábla mellett */
+  extraSigns?: string[]
+  /** Vasúti átjáró az úton (a mi utunk a sínek előtt) */
+  rail?: { barrier: boolean; light: RailLight; barrierDown?: boolean }
 }
 
 export interface Option {
@@ -504,6 +510,97 @@ function crossingPrompts(): Draft[] {
   ]
 }
 
+// ---------------------------------------------------------------- Vasúti átjáró
+
+function railPrompts(s: Situation): Draft[] {
+  // Kézzel felvett átjárónál a leggyakoribb eset: fénysorompó, sorompó nélkül
+  const rail = s.rail ?? { barrier: false, lights: true }
+  const scene = (light: RailLight, barrierDown = false): Scene => ({
+    layout: 'road',
+    turn: 'straight',
+    mySign: 'rail',
+    cars: [],
+    rail: { barrier: rail.barrier, light, barrierDown },
+  })
+  const out: Draft[] = [
+    {
+      id: 'rail:approach',
+      title: 'Vasúti átjáró előtt',
+      text: 'Vasúti átjáróra figyelmeztető tábla és háromcsíkos előjelző tábla mellett haladsz el. Hogyan közeledsz?',
+      scene: scene(rail.lights ? 'white_flash' : 'none'),
+      options: [
+        ok('Csökkentem a sebességet, hogy a megállás helyén szükség esetén biztonságosan meg tudjak állni'),
+        bad('Tartom a sebességet, a tábla csak tájékoztat', '8/28'),
+        bad('Gyorsítok, hogy mielőbb átérjek a síneken', '8/16'),
+      ],
+      timeoutCode: '8/25',
+      explanation:
+        'Vasúti átjáróhoz úgy kell közeledni, hogy a jármű a megállás helyén (sorompó, fénysorompó vagy Andráskereszt előtt) biztonságosan megállítható legyen.',
+    },
+  ]
+  if (rail.lights) {
+    out.push(
+      {
+        id: 'rail:red_flash',
+        title: 'Fénysorompó: villogó piros',
+        text: 'A fénysorompó váltakozva villogó piros fényt ad, vonatot nem látsz. Mi a teendőd?',
+        scene: scene('red_flash'),
+        options: [
+          ok('Megállok a fénysorompó előtt, és megvárom, amíg a piros fény kialszik'),
+          bad('Ha nem látok vonatot, óvatosan áthaladok', '8/26'),
+          bad('Gyorsan áthaladok, mielőtt a vonat odaér', '8/3'),
+        ],
+        timeoutCode: '8/25',
+        explanation: 'A villogó piros fény tilos jelzés: a fénysorompó előtt meg kell állni, akkor is, ha vonat nem látható.',
+      },
+      {
+        id: 'rail:white_flash',
+        title: 'Fénysorompó: villogó fehér',
+        text: 'A fénysorompó lassú ütemű villogó fehér fényt ad. Mi a teendőd?',
+        scene: scene('white_flash'),
+        options: [
+          ok('Áthaladhatok, fokozott óvatossággal, és nem állok meg a síneken'),
+          bad('Megállok, mert vasúti átjárónál mindig meg kell állni', '8/29'),
+          bad('Ha előttem torlódás van, a síneken várakozom', '8/3'),
+        ],
+        timeoutCode: '8/25',
+        explanation:
+          'A villogó fehér fény azt jelzi, hogy a fénysorompó működik, és szabad az áthaladás. A síneken megállni tilos: csak akkor hajts rá, ha a túloldalon van hely.',
+      },
+    )
+  } else {
+    out.push({
+      id: 'rail:no_signal',
+      title: 'Jelzőberendezés nélküli átjáró',
+      text: 'Andráskereszttel jelzett, sorompó és fényjelző nélküli vasúti átjáróhoz érsz. Mi a teendőd?',
+      scene: scene('none'),
+      options: [
+        ok('Lassítok, jobbra-balra körülnézek, és csak akkor haladok át, ha vonat nem közeledik'),
+        bad('Továbbhaladok, mert nincs sorompó, tehát nem jön vonat', '8/28'),
+        bad('Megállok a síneken, hogy jobban kilássak', '8/3'),
+      ],
+      timeoutCode: '8/25',
+      explanation: 'Jelzőberendezés nélküli átjárónál meg kell győződni arról, hogy vonat nem közeledik; ha a kilátás korlátozott, meg kell állni.',
+    })
+  }
+  if (rail.barrier) {
+    out.push({
+      id: 'rail:barrier',
+      title: 'Lezárt sorompó',
+      text: 'A sorompó lezárt helyzetben van, vonatot nem látsz. Mi a teendőd?',
+      scene: scene(rail.lights ? 'red_flash' : 'none', true),
+      options: [
+        ok('Megállok a sorompó előtt, és megvárom, amíg teljesen felnyílik'),
+        bad('Ha félsorompó, kikerülöm, mert nem jön vonat', '8/26'),
+        bad('Közvetlenül a sorompó rúdja elé hajtok, hogy azonnal indulhassak', '6/3'),
+      ],
+      timeoutCode: '8/25',
+      explanation: 'Lezárt (vagy záródó, nyíló) sorompónál meg kell állni. A sorompót kikerülni tilos, akkor is, ha vonat nem látható.',
+    })
+  }
+  return out
+}
+
 // ---------------------------------------------------------------- Sebesség
 
 function speedPrompts(s: Situation, rng: Rng): Draft[] {
@@ -547,7 +644,7 @@ export function baseScene(s: Situation): Partial<Scene> {
 }
 
 function turnPrompts(s: Situation): Draft[] {
-  if (s.turn === 'straight' || s.kind === 'roundabout') return []
+  if (s.turn === 'straight' || s.kind === 'roundabout' || s.kind === 'rail_crossing') return []
   const dir = s.turn === 'left' ? 'Balra' : 'Jobbra'
   return [
     {
@@ -602,7 +699,12 @@ export function buildPrompts(s: Situation, rng: Rng = Math.random): Prompt[] {
   const turn = turnPrompts(s)
   if (turn.length) result.push(pick(turn, rng))
   if (main.length) result.push(pick(main, rng))
-  return result.map((d) => ({ ...d, options: shuffle(d.options, rng) }))
+  return result.map((d) => withRealSigns(s, { ...d, options: shuffle(d.options, rng) }))
+}
+
+/** A helyszínen valóban álló táblák (OSM) a jelenetbe kerülnek, így a 3D nézet és a térkép a valós helyet mutatja */
+function withRealSigns(s: Situation, p: Prompt): Prompt {
+  return s.signs?.length ? { ...p, scene: { ...p.scene, extraSigns: s.signs } } : p
 }
 
 /** Egy helyzet összes lehetséges kérdésváltozata (teszteléshez és előnézethez) */
@@ -624,11 +726,13 @@ export function allDrafts(s: Situation, rng: Rng = Math.random): Prompt[] {
       return crossingPrompts()
     case 'speed_change':
       return speedPrompts(s, rng)
+    case 'rail_crossing':
+      return railPrompts(s)
   }
 }
 
 export function allPromptVariants(s: Situation): Prompt[] {
-  return [...turnPrompts(s), ...allDrafts(s, () => 0.5)]
+  return [...turnPrompts(s), ...allDrafts(s, () => 0.5)].map((p) => withRealSigns(s, p))
 }
 
 export const KIND_LABEL: Record<Situation['kind'], string> = {
@@ -640,6 +744,7 @@ export const KIND_LABEL: Record<Situation['kind'], string> = {
   roundabout: 'Körforgalom',
   crossing: 'Zebra',
   speed_change: 'Sebességváltozás',
+  rail_crossing: 'Vasúti átjáró',
 }
 
 export const TURN_LABEL: Record<Turn, string> = { straight: 'egyenesen', left: 'balra', right: 'jobbra' }

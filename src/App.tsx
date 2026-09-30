@@ -31,8 +31,9 @@ export default function App() {
       break
     case 'drive': {
       const m = query.get('mode')
-      const mode: Mode = m === 'exam' ? 'exam' : 'practice'
-      content = <DrivePage key={`${arg}-${mode}-${location.hash}`} routeId={arg ?? null} mode={mode} />
+      const mode: Mode = m === 'exam' ? 'exam' : m === 'tour' ? 'tour' : 'practice'
+      const focus = query.get('focus') === 'weak' ? 'weak' : undefined
+      content = <DrivePage key={`${arg}-${mode}-${location.hash}`} routeId={arg ?? null} mode={mode} focus={focus} />
       break
     }
     case 'review':

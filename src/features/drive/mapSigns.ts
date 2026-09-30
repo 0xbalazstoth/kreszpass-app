@@ -35,7 +35,12 @@ export function sceneMapPins(line: LineString, s: Situation, scene: Scene): MapP
   }
   const before = scene.layout === 'road' ? (scene.mySign === 'speed' ? 0 : 4) : scene.layout === 'roundabout' ? 16 : 8
   if (scene.light) place(`${s.id}:light`, LIGHT_ICON, before)
-  signs.mine.forEach((code, i) => place(`${s.id}:mine:${i}`, code, before))
-  signs.approach.forEach((code, i) => place(`${s.id}:approach:${i}`, code, 50))
+  // Egy oszlopon több tábla: a térképen kicsit egymás előtt, hogy ne takarják egymást
+  signs.mine.forEach((code, i) => place(`${s.id}:mine:${i}`, code, before + i * 5))
+  // Vasúti átjárónál a figyelmeztető tábla és az előjelző egymás alatt áll: a térképen elég a figyelmeztető
+  const approach = scene.rail ? signs.approach.slice(0, 1) : signs.approach
+  approach.forEach((code, i) => place(`${s.id}:approach:${i}`, code, 50))
+  // Egyirányú célút: a tábla a kanyarodás után áll
+  signs.target.forEach((code, i) => place(`${s.id}:target:${i}`, code, -12))
   return out
 }

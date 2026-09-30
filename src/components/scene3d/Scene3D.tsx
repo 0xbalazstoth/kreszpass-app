@@ -2,7 +2,7 @@ import { Canvas } from '@react-three/fiber'
 import { useMemo, useState } from 'react'
 import type { Scene } from '../../domain/questions'
 import { buildLayout } from './layout'
-import { Buildings, DriverCamera, Ground, PartnerCar, Pedestrian, SignPost, TrafficLight, Van, type Clock } from './parts'
+import { Buildings, DriverCamera, Ground, PartnerCar, Pedestrian, RailBarrier, RailLights, RailTrack, SignPost, TrafficLight, Van, type Clock } from './parts'
 
 interface Props {
   scene: Scene
@@ -48,6 +48,13 @@ export default function Scene3D({ scene, animate, approachMs }: Props) {
         <directionalLight position={[30, 60, 25]} intensity={1.5} />
         <Ground layout={layout} />
         <Buildings list={layout.buildings} />
+        {layout.rail && (
+          <>
+            <RailTrack rail={layout.rail} />
+            <RailLights rail={layout.rail} />
+            <RailBarrier rail={layout.rail} />
+          </>
+        )}
         {layout.signs.map((s, i) => (
           <SignPost key={i} post={s} />
         ))}

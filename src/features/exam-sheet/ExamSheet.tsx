@@ -58,7 +58,7 @@ export function ExamSheet({ sessionId }: { sessionId: string }) {
           <div>
             <h1>Forgalmi vizsga minősítő lap</h1>
             <p className="muted">
-              Szimuláció · {isExam ? 'próbavizsga' : session.mode === 'practice' ? 'gyakorlás' : 'ismétlés'} · Megengedett hibavonalak
+              Szimuláció · {isExam ? 'próbavizsga' : session.mode === 'practice' ? 'gyakorlás' : session.mode === 'tour' ? 'teljes útvonal' : 'ismétlés'} · Megengedett hibavonalak
               száma: {MAX_FAULT_LINES}
             </p>
           </div>

@@ -126,6 +126,26 @@ function RoadScene({ scene }: { scene: Scene }) {
       <path d="M115 0V300M185 0V300" stroke={ROAD_EDGE} strokeWidth="3" />
       <path d="M150 0V300" stroke={MARK} strokeWidth="2" strokeDasharray="12 10" />
       {hasZebra && <Zebra x={117} y={120} w={66} h={22} vertical={false} />}
+      {scene.rail && (
+        <g aria-label="vasúti átjáró">
+          <rect x="0" y="112" width="300" height="26" fill="#8b8173" />
+          {Array.from({ length: 30 }, (_, i) => (
+            <rect key={i} x={i * 10 + 2} y="114" width="4" height="22" fill="#5b4a37" />
+          ))}
+          <path d="M0 118H300M0 132H300" stroke="#d1d5db" strokeWidth="2.5" />
+          {scene.rail.barrierDown && <rect x="148" y="146" width="40" height="5" fill="#dc2626" stroke="#fff" strokeWidth="1" />}
+          {scene.rail.light !== 'none' && (
+            <g>
+              <rect x="193" y="146" width="30" height="14" rx="3" fill="#111827" />
+              <circle cx="201" cy="153" r="4.5" fill={scene.rail.light === 'red_flash' ? '#ef4444' : '#3a1a1a'} />
+              <circle cx="215" cy="153" r="4.5" fill={scene.rail.light === 'white_flash' ? '#f8fafc' : '#3a3a3a'} />
+            </g>
+          )}
+          {signs.approach.map((code, i) => (
+            <SignGlyph key={code} code={code} x={215 + i * 26} y={262} size={24} />
+          ))}
+        </g>
+      )}
       {signs.mine.map((code) => (
         <SignGlyph key={code} code={code} x={215} y={scene.mySign === 'speed' ? 150 : 110} size={scene.mySign === 'speed' ? 56 : 36} />
       ))}

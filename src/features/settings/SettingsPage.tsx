@@ -32,7 +32,8 @@ export function SettingsPage() {
   if (!s) return <p className="muted">Betöltés…</p>
 
   const set = (patch: Partial<Settings>) => setS({ ...s, ...patch })
-  const valid = s.okMs > 0 && s.lateMs > s.okMs && s.timeoutMs > s.lateMs && s.approachMs >= 500 && s.signFlashMs >= 200
+  const valid =
+    s.okMs > 0 && s.lateMs > s.okMs && s.timeoutMs > s.lateMs && s.approachMs >= 500 && s.signFlashMs >= 200 && s.tourSpeedKmh >= 10 && s.tourSpeedKmh <= 90
 
   async function save() {
     if (!valid || !s) {
@@ -166,6 +167,17 @@ export function SettingsPage() {
             <input type="number" min={500} step={250} value={s.approachMs} onChange={(e) => set({ approachMs: Number(e.target.value) })} />
           </label>
           <label>
+            Teljes útvonal sebessége (km/h)
+            <input
+              type="number"
+              min={10}
+              max={90}
+              step={5}
+              value={s.tourSpeedKmh}
+              onChange={(e) => set({ tourSpeedKmh: Number(e.target.value) })}
+            />
+          </label>
+          <label>
             Tábla felvillanása (ms)
             <input type="number" min={200} step={100} value={s.signFlashMs} onChange={(e) => set({ signFlashMs: Number(e.target.value) })} />
           </label>
@@ -177,6 +189,14 @@ export function SettingsPage() {
           </label>
           <label className="check">
             <input type="checkbox" checked={s.terrain} onChange={(e) => set({ terrain: e.target.checked })} /> Domborzat a térképen
+          </label>
+          <label className="check">
+            <input type="checkbox" checked={s.actionDrill} onChange={(e) => set({ actionDrill: e.target.checked })} /> Mozdulatok gyakorlása
+            kereszteződések előtt (tükör, index, fék)
+          </label>
+          <label className="check">
+            <input type="checkbox" checked={s.examinerVoice} onChange={(e) => set({ examinerVoice: e.target.checked })} /> Teljes útvonalon a
+            vizsgabiztos hangos utasításai
           </label>
           <label className="check">
             <input type="checkbox" checked={s.examFeedback} onChange={(e) => set({ examFeedback: e.target.checked })} /> Próbavizsgán rövid

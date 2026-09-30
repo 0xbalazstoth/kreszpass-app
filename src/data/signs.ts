@@ -7,7 +7,8 @@ import manifest from './signs.json'
  * A képeket a `npm run signs` script tölti le a public/signs mappába.
  */
 
-export type SignGroup = 'elsobbsegi' | 'tilalmi' | 'utasito' | 'veszely' | 'tajekoztato'
+/** A csoportok a nyomtatható KRESZ-táblalista szakaszait követik */
+export type SignGroup = 'utvonal' | 'elsobbsegi' | 'utasito' | 'megallas' | 'veszely' | 'vasut' | 'tajekoztato' | 'tilalmi'
 
 export interface SignInfo {
   code: string
@@ -23,11 +24,14 @@ export const SIGNS: SignInfo[] = manifest as SignInfo[]
 export const SIGN_BY_CODE = new Map(SIGNS.map((s) => [s.code, s]))
 
 export const GROUP_LABEL: Record<SignGroup, string> = {
+  utvonal: 'Útvonaltípust jelző',
   elsobbsegi: 'Elsőbbséget szabályozó',
-  veszely: 'Veszélyt jelző',
-  tilalmi: 'Tilalmi',
   utasito: 'Utasítást adó',
+  megallas: 'Megállási és várakozási tilalmat jelző',
+  veszely: 'Veszélyt jelző',
+  vasut: 'Vasúti átjárót jelző',
   tajekoztato: 'Tájékoztató',
+  tilalmi: 'Járművek forgalmára vonatkozó tilalmi',
 }
 
 export function signUrl(code: string): string {
@@ -60,6 +64,9 @@ export function signCodeFor(type: SignType, speed?: number): string {
       return 'B-001'
     case 'speed':
       return speedSignCode(speed ?? 50)
+    case 'rail':
+      // Andráskereszt a vasúti átjárónál
+      return 'A-041'
   }
 }
 
@@ -72,12 +79,50 @@ export interface SceneSigns {
   approach: string[]
 }
 
-export function signsForScene(scene: Scene): SceneSigns {
+/** A célút elején (kanyarodás után) álló táblák: ezek nem a saját oszlopunkra kerülnek */
+export const TARGET_ROAD_SIGNS = new Set(['E-012'])
+
+export function signsForScene(scene: Scene): SceneSigns & { target: string[] } {
+  const main = scene.mySign ? [signCodeFor(scene.mySign, scene.speed)] : []
+  // A helyszínen valóban álló további táblák (OSM), a fő tábla alatt; legfeljebb kettő, hogy olvasható maradjon
+  const extra = (scene.extraSigns ?? []).filter((c) => !main.includes(c) && SIGN_BY_CODE.has(c))
+  const approach = scene.mySign === 'roundabout' ? ['A-056'] : scene.rail ? [scene.rail.barrier ? 'A-038' : 'A-039', 'A-045'] : []
   return {
-    mine: scene.mySign ? [signCodeFor(scene.mySign, scene.speed)] : [],
+    mine: [...main, ...extra.filter((c) => !TARGET_ROAD_SIGNS.has(c) && !approach.includes(c)).slice(0, 2)],
     cross: scene.crossSign ? [signCodeFor(scene.crossSign)] : [],
-    approach: scene.mySign === 'roundabout' ? ['A-056'] : [],
+    approach,
+    target: scene.turn !== 'straight' ? extra.filter((c) => TARGET_ROAD_SIGNS.has(c)) : [],
   }
+}
+
+/**
+ * Az OpenStreetMap `traffic_sign` címkéjének értelmezése (pl. „HU:B-001”, „HU:C033[70]”, „stop”, „maxspeed”).
+ * Csak az appban meglévő táblákat adja vissza. A „city_limit” jelentése irányfüggő (kezdete/vége),
+ * ezért azt külön, `city_limit` jelöléssel adja vissza.
+ */
+export function parseTrafficSign(tags: Record<string, string> | undefined): string[] {
+  const value = tags?.traffic_sign
+  if (!value) return []
+  const out: string[] = []
+  for (const raw of value.split(/[;,]/)) {
+    const token = raw.trim()
+    let code: string | null = null
+    if (token === 'city_limit') code = 'city_limit'
+    else if (token === 'stop') code = 'B-002'
+    else if (token === 'give_way' || token === 'yield') code = 'B-001'
+    else if (token === 'maxspeed') {
+      const v = Number.parseInt(tags?.maxspeed ?? '', 10)
+      code = Number.isFinite(v) ? `C-033-${v}` : null
+    } else {
+      const m = /^(?:HU:)?([A-G])[-_ ]?0*(\d{1,3})(?:\[(\d+)\])?$/i.exec(token)
+      if (m) {
+        const base = `${m[1].toUpperCase()}-${m[2].padStart(3, '0')}`
+        code = m[3] ? `${base}-${Number(m[3])}` : base
+      }
+    }
+    if (code && (code === 'city_limit' || SIGN_BY_CODE.has(code)) && !out.includes(code)) out.push(code)
+  }
+  return out
 }
 
 /** A helyzet jelképe a térképen és a szerkesztőben */
@@ -91,6 +136,7 @@ export function signForSituation(s: Pick<Situation, 'kind' | 'speedTo'>): string
     roundabout: 'A-056',
     crossing: 'E-038',
     speed_change: s.speedTo ? speedSignCode(s.speedTo) : 'C-043',
+    rail_crossing: 'A-041',
   }
   return byKind[s.kind]
 }

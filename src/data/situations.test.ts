@@ -95,3 +95,37 @@ describe('kettős úttestű lámpás csomópont', () => {
     expect(res).toHaveLength(1)
   })
 })
+
+describe('valós táblák és vasúti átjáró', () => {
+  const extra: OsmData = {
+    elements: [
+      ...osm.elements.map((e) => (e.type === 'way' && e.id === 4 ? { ...e, tags: { ...e.tags, oneway: 'yes' } } : e)),
+      // Kitáblázott 30-as korlátozás a kanyarodás előtt, a jobb (déli) oldalon
+      n(950, 19.0055, 47.49995, { traffic_sign: 'HU:C033[30]' }),
+      // Ugyanez a bal (északi) oldalon: a szembejövőknek szól
+      n(951, 19.0052, 47.50006, { traffic_sign: 'HU:C-001' }),
+      // Vasúti átjáró a Kis utcán, félsorompóval
+      n(960, 19.006, 47.502, { railway: 'level_crossing', 'crossing:barrier': 'half' }),
+    ],
+  }
+  let k = 0
+  const res = generateSituations(route, extra, { routeId: 'r1', newId: () => `x${++k}` })
+
+  it('a vasúti átjárót felismeri a sorompó adatával', () => {
+    const rail = res.find((s) => s.kind === 'rail_crossing')!
+    expect(rail).toBeDefined()
+    expect(Math.abs(rail.d - 673)).toBeLessThan(15)
+    expect(rail.rail).toEqual({ barrier: true, lights: true })
+    expect(rail.needsReview).toBe(false)
+  })
+
+  it('a helyzet elé kitett, jobb oldali táblát hozzárendeli, a bal oldalit nem', () => {
+    const turn = res.find((s) => s.turn === 'left')!
+    expect(turn.signs).toContain('C-033-30')
+    expect(turn.signs).not.toContain('C-001')
+  })
+
+  it('egyirányú utcába kanyarodva az „Egyirányú forgalmú út” tábla is megjelenik', () => {
+    expect(res.find((s) => s.turn === 'left')!.signs).toContain('E-012')
+  })
+})

@@ -20,6 +20,13 @@ Minden felhasznált csomag nyílt forráskódú, minden szolgáltatás ingyenes,
    megfelelt/nem felelt meg eredménnyel.
 5. **Ismétlés**: a rosszul vagy lassan megválaszolt helyzetek FSRS ütemezéssel jönnek vissza.
 6. **Statisztika**: hibatérkép az útvonalon, leggyakoribb hibakódok, korábbi munkamenetek.
+7. **Teljes útvonal**: megszakítás nélkül végigvezet az útvonalon (a sebesség beállítható), a vizsgabiztos hangosan
+   mondja az irányt („A következő kereszteződésnél forduljon balra.”), minden helyzetnél megállsz és válaszolsz.
+8. **Gyenge pontok és felkészültség**: az útvonal kártyáján a felkészültség százalékban (a helyzetek legutóbbi három
+   válasza alapján), a *Gyenge pontok* gomb a 10 leggyengébb helyzetet gyakoroltatja. A szerkesztőben a helyzetek az
+   eredményeid szerint is színezhetők.
+9. **Mozdulat-gyakorlás** (bekapcsolható): kereszteződés előtt tükör (`M`), index (`←` `→`), fékezés (`Szóköz`), vagy a
+   képernyőn lévő gombokkal. A sorrendet és az időzítést a lap kódjai szerint értékeli (4/4, 4/5, 6/8, 8/6, 8/30, 8/26).
 
 Billentyűzettel az 1–4 gombok választanak, az Enter továbblép. Bekapcsolható a kérdések felolvasása és a
 hangos válasz (a sorszám kimondásával), ha a böngésző támogatja.
@@ -33,6 +40,12 @@ hangos válasz (a sorszám kimondásával), ha a böngésző támogatja.
   a helyzetek pontján a valódi táblával. A ⤢ gombbal a két nézet felcserélhető.
 - **Táblafelismerés.** A *Táblák* menüben a tábla egy pillanatra felvillan, utána kell kiválasztani a jelentését.
   A rosszul vagy lassan felismert táblák ismétlésre visszajönnek. Itt található a táblatár is.
+- **Valós táblák a helyszínen.** A kérdés fő tábláján felül a helyszínen ténylegesen álló táblák is megjelennek a 3D nézetben
+  és a térképen: az OpenStreetMap-ben kitáblázott jelzőtáblák (pl. sebességkorlátozás, lakott terület), a főútvonal, és
+  egyirányú utcába kanyarodva az „Egyirányú forgalmú út” tábla. A szerkesztő listája is mutatja őket.
+- **Vasúti átjárók.** Az OSM-ből felismert átjáróknál sínek, Andráskereszt, fénysorompó (villogó piros / fehér) és sorompó;
+  előtte figyelmeztető és háromcsíkos előjelző tábla. A régebben felismert útvonalaknál ehhez futtasd újra a
+  helyzetfelismerést.
 - Gyengébb telefonon a Beállításokban a 3D nézet és a domborzat kikapcsolható: ilyenkor felülnézeti vázlat látszik.
 
 A táblák a Wikimedia Commonsról származnak (magyar KRESZ táblák, közkincs: PD-HU-exempt). Újraletöltés:

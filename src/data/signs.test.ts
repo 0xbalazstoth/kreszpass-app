@@ -3,24 +3,32 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import type { SignType } from '../domain/questions'
 import type { SituationKind } from '../domain/types'
-import { SIGN_BY_CODE, SIGNS, signCodeFor, signForSituation, signsForScene, speedSignCode } from './signs'
+import { GROUP_LABEL, parseTrafficSign, SIGN_BY_CODE, SIGNS, signCodeFor, signForSituation, signsForScene, speedSignCode } from './signs'
 
 const PUBLIC = join(import.meta.dirname, '..', '..', 'public', 'signs')
 
 describe('letöltött KRESZ táblák', () => {
-  it('minden jegyzékbeli táblához van PNG fájl', () => {
-    expect(SIGNS.length).toBeGreaterThanOrEqual(60)
+  it('minden jegyzékbeli táblához van képfájl (PNG, vagy a kiegészítő táblás változatnál SVG)', () => {
     for (const s of SIGNS) {
       const path = join(PUBLIC, s.file)
       expect(existsSync(path), s.file).toBe(true)
-      expect(readFileSync(path).subarray(1, 4).toString(), s.file).toBe('PNG')
+      const head = readFileSync(path).subarray(0, 5).toString()
+      if (s.file.endsWith('.svg')) expect(head, s.file).toBe('<svg ')
+      else expect(head.slice(1, 4), s.file).toBe('PNG')
     }
+  })
+
+  it('a teljes, jelenleg érvényes KRESZ-táblakészlet: minden csoport szerepel, régi változat nincs', () => {
+    expect(SIGNS.length).toBeGreaterThanOrEqual(220)
+    for (const g of Object.keys(GROUP_LABEL)) expect(SIGNS.some((s) => s.group === g), g).toBe(true)
+    for (const s of SIGNS) expect(`${s.code} ${s.source}`).not.toMatch(/historic|_\(old\)/i)
   })
 
   it('minden tábla közkincs, és van forrása', () => {
     for (const s of SIGNS) {
       expect(s.license.toLowerCase()).toContain('public domain')
-      expect(s.source).toMatch(/^https:\/\/commons\.wikimedia\.org\/wiki\/File:/)
+      // Commons-forrás(ok), vagy a hivatalos KRESZ-szöveg ábrája ott, ahol a Commonson nincs kép
+      for (const src of s.source.split(' ')) expect(src).toMatch(/^(https:\/\/commons\.wikimedia\.org\/wiki\/File:\S+|https:\/\/njt\.hu\/jogszabaly\/\S+)$/)
     }
   })
 
@@ -58,5 +66,36 @@ describe('tábla hozzárendelések', () => {
     const signs = signsForScene({ layout: 'junction', turn: 'straight', mySign: 'priority_road', crossSign: 'give_way', cars: [] })
     expect(signs.mine).toEqual(['B-003'])
     expect(signs.cross).toEqual(['B-001'])
+  })
+})
+
+describe('OSM tábla-címkék értelmezése', () => {
+  it('a különféle írásmódokat a saját kódjainkra fordítja', () => {
+    expect(parseTrafficSign({ traffic_sign: 'HU:B-001' })).toEqual(['B-001'])
+    expect(parseTrafficSign({ traffic_sign: 'HU:B001' })).toEqual(['B-001'])
+    expect(parseTrafficSign({ traffic_sign: 'HU:C033[70]' })).toEqual(['C-033-70'])
+    expect(parseTrafficSign({ traffic_sign: 'maxspeed', maxspeed: '40' })).toEqual(['C-033-40'])
+    expect(parseTrafficSign({ traffic_sign: 'stop' })).toEqual(['B-002'])
+    expect(parseTrafficSign({ traffic_sign: 'HU:D014;HU:E038' })).toEqual(['D-014', 'E-038'])
+    expect(parseTrafficSign({ traffic_sign: 'city_limit' })).toEqual(['city_limit'])
+  })
+
+  it('az ismeretlen vagy nálunk nem szereplő táblát kihagyja', () => {
+    expect(parseTrafficSign({ traffic_sign: 'DE:250' })).toEqual([])
+    expect(parseTrafficSign({ traffic_sign: 'HU:A-099' })).toEqual([])
+    expect(parseTrafficSign({ traffic_sign: 'Lovaskocsi' })).toEqual([])
+    expect(parseTrafficSign(undefined)).toEqual([])
+  })
+
+  it('vasúti átjárónál a figyelmeztető és az előjelző tábla a közeledés elején áll', () => {
+    const s = signsForScene({ layout: 'road', turn: 'straight', mySign: 'rail', cars: [], rail: { barrier: true, light: 'red_flash' } })
+    expect(s.approach).toEqual(['A-038', 'A-045'])
+    expect(s.mine).toEqual(['A-041'])
+  })
+
+  it('a valós további táblák a fő tábla alá kerülnek, az egyirányú tábla a célútra', () => {
+    const s = signsForScene({ layout: 'junction', turn: 'left', mySign: 'give_way', cars: [], extraSigns: ['C-033-30', 'E-012', 'B-001'] })
+    expect(s.mine).toEqual(['B-001', 'C-033-30'])
+    expect(s.target).toEqual(['E-012'])
   })
 })

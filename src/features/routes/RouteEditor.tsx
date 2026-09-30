@@ -16,6 +16,7 @@ import { formatDistance } from '../../lib/format'
 import { RouteGeom, type LngLat } from '../../lib/geo'
 import { href, navigate } from '../../lib/router'
 import { KIND_COLOR, KIND_ORDER } from './kinds'
+import { attemptsBySituation, HEALTH_COLOR, HEALTH_LABEL, situationHealth } from '../../domain/progress'
 
 type Mode = 'select' | 'waypoints' | 'situation'
 
@@ -49,6 +50,13 @@ export function RouteEditor({ routeId: param }: Props) {
 
   const liveSituations = useLiveQuery(() => situationsOf(routeId), [routeId])
   const situations = useMemo(() => liveSituations ?? [], [liveSituations])
+  const sessions = useLiveQuery(() => db.sessions.toArray(), [])
+  const [byResult, setByResult] = useState(false)
+  const health = useMemo(() => {
+    const by = attemptsBySituation((sessions ?? []).flatMap((x) => x.attempts))
+    return new Map(situations.map((s) => [s.id, situationHealth(by.get(s.id) ?? [])]))
+  }, [sessions, situations])
+  const practised = [...health.values()].some((h) => h.status !== 'new')
 
   useEffect(() => {
     getSettings().then((s) => setToken(s.mapillaryToken))
@@ -86,11 +94,12 @@ export function RouteEditor({ routeId: param }: Props) {
         id: s.id,
         lngLat: [s.lng, s.lat],
         label: String(i + 1),
-        color: KIND_COLOR[s.kind],
+        // Eredmény szerinti színezésnél piros = gyenge, sárga = bizonytalan, zöld = jól megy
+        color: byResult ? HEALTH_COLOR[health.get(s.id)?.status ?? 'new'] : KIND_COLOR[s.kind],
         selected: s.id === selectedId,
-        sign: signForSituation(s),
+        sign: byResult ? undefined : signForSituation(s),
       })),
-    [situations, selectedId],
+    [situations, selectedId, byResult, health],
   )
 
   async function run(label: string, fn: () => Promise<void>) {
@@ -416,10 +425,16 @@ export function RouteEditor({ routeId: param }: Props) {
               <label className="check">
                 <input type="checkbox" checked={onlyReview} onChange={(e) => setOnlyReview(e.target.checked)} /> csak ellenőrizendők
               </label>
+              {practised && (
+                <label className="check">
+                  <input type="checkbox" checked={byResult} onChange={(e) => setByResult(e.target.checked)} /> eredményeim a térképen
+                </label>
+              )}
             </div>
             <ol className="sit-list">
               {visible.map((s) => {
                 const idx = situations.indexOf(s) + 1
+                const h = health.get(s.id)?.status ?? 'new'
                 return (
                   <li
                     key={s.id}
@@ -432,7 +447,18 @@ export function RouteEditor({ routeId: param }: Props) {
                         {idx}
                       </span>
                       <SignIcon code={signForSituation(s)} size={26} />
+                      {s.signs
+                        ?.filter((c) => c !== signForSituation(s))
+                        .map((c) => (
+                          <SignIcon key={c} code={c} size={20} />
+                        ))}
                       <span className="muted">{formatDistance(s.d)}</span>
+                      {h !== 'new' && (
+                        <span className="badge health" style={{ borderColor: HEALTH_COLOR[h] }}>
+                          <span className="health-dot" style={{ background: HEALTH_COLOR[h] }} />
+                          {HEALTH_LABEL[h]}
+                        </span>
+                      )}
                       {s.needsReview && <span className="badge warn">ellenőrizendő</span>}
                       {s.source !== 'osm' && <span className="badge">{s.source === 'manual' ? 'kézi' : 'Mapillary'}</span>}
                       {coverage[s.id] !== undefined && (

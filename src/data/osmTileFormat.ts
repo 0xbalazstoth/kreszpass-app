@@ -11,14 +11,32 @@ import type { OsmData, OsmNode, OsmWay, Tags } from './osm.ts'
  */
 
 export const TILE_ZOOM = 13
-export const TILE_FORMAT_VERSION = 1
+// 2: vasúti átjárók, táblapontok (traffic_sign), egyirányú utak
+export const TILE_FORMAT_VERSION = 2
 
 /** Utak címkéi, amelyeket a helyzetfelismerés használ */
-export const WAY_TAG_KEYS = ['highway', 'name', 'ref', 'maxspeed', 'maxspeed:forward', 'junction', 'priority_road'] as const
-/** Tábla/lámpa/zebra pontok címkéi */
-export const NODE_TAG_KEYS = ['highway', 'crossing', 'crossing_signals'] as const
+export const WAY_TAG_KEYS = ['highway', 'name', 'ref', 'maxspeed', 'maxspeed:forward', 'junction', 'priority_road', 'oneway'] as const
+/** Tábla/lámpa/zebra/vasúti átjáró pontok címkéi */
+export const NODE_TAG_KEYS = [
+  'highway',
+  'crossing',
+  'crossing_signals',
+  'railway',
+  'crossing:barrier',
+  'crossing:light',
+  'traffic_sign',
+  'traffic_sign:direction',
+  'direction',
+  'maxspeed',
+] as const
 /** Ezeket a pontokat tartjuk meg (a helyzetfelismerés ezekből dolgozik) */
 export const CONTROL_HIGHWAYS = new Set(['stop', 'give_way', 'traffic_signals', 'crossing', 'mini_roundabout'])
+
+/** Megtartandó pont-e: tábla, lámpa, zebra, vasúti átjáró vagy kitáblázott jelzőtábla */
+export function isControlNode(tags: Tags | undefined | null): boolean {
+  if (!tags) return false
+  return CONTROL_HIGHWAYS.has(tags.highway ?? '') || tags.railway === 'level_crossing' || Boolean(tags.traffic_sign)
+}
 
 /**
  * A csak alakot adó (nem csomóponti) töréspontok nem kapnak valódi OSM-azonosítót, dekódoláskor
@@ -165,7 +183,7 @@ export function toEncodable(osm: OsmData): { ways: EncWay[]; nodes: EncNode[] } 
     nodeIds: w.nodes.map((id, i) => (i === 0 || i === w.nodes.length - 1 || (count.get(id) ?? 0) >= 2 ? id : null)),
   }))
   const nodes: EncNode[] = osm.elements
-    .filter((e): e is OsmNode => e.type === 'node' && CONTROL_HIGHWAYS.has(e.tags?.highway ?? ''))
+    .filter((e): e is OsmNode => e.type === 'node' && isControlNode(e.tags))
     .map((n) => ({ id: n.id, lon: n.lon, lat: n.lat, tags: n.tags ?? {} }))
   return { ways: encWays, nodes }
 }

@@ -2,7 +2,8 @@
 /**
  * Helyi OpenStreetMap-adatcsomag készítése Magyarország teljes kivonatából (Geofabrik, ingyenes, ODbL).
  *
- * A helyzetfelismeréshez szükséges adatokat (autóval járható utak, STOP/elsőbbségadás/lámpa/zebra pontok)
+ * A helyzetfelismeréshez szükséges adatokat (autóval járható utak, STOP/elsőbbségadás/lámpa/zebra/vasúti átjáró
+ * és jelzőtábla-pontok)
  * z13-as csempékre bontva a public/osm mappába írja. Az app ezekből dolgozik, így nem függ a túlterhelt
  * nyilvános Overpass szerverektől.
  *
@@ -20,8 +21,8 @@ import { fileURLToPath } from 'node:url'
 import { readOsmPbf, type OsmPbfBlock } from '@osmix/pbf'
 import { DRIVABLE, type Tags } from '../src/data/osm.ts'
 import {
-  CONTROL_HIGHWAYS,
   encodeTile,
+  isControlNode,
   lonLatToTile,
   NODE_TAG_KEYS,
   TILE_FORMAT_VERSION,
@@ -237,7 +238,7 @@ async function readNodes(file: string, ways: WayStore): Promise<NodeStore> {
           store.lonE7[idx] = lonE7
           found++
         }
-        if (tags && CONTROL_HIGHWAYS.has(tags.highway ?? '')) store.controls.push({ id, lon, lat, tags })
+        if (isControlNode(tags)) store.controls.push({ id, lon, lat, tags: tags as Tags })
       }
       const dense = group.dense
       if (dense) {

@@ -22,6 +22,7 @@ export type SituationKind =
   | 'roundabout'
   | 'crossing'
   | 'speed_change'
+  | 'rail_crossing'
 
 export type Turn = 'straight' | 'left' | 'right'
 
@@ -43,9 +44,17 @@ export interface Situation {
   needsReview: boolean
   source: 'osm' | 'mapillary' | 'manual'
   note?: string
+  /**
+   * A helyszínen ténylegesen álló (az OpenStreetMap-adatokból levezetett vagy ott kitáblázott) táblák kódjai,
+   * a közeledés irányából. A kérdés fő tábláján felül ezek is megjelennek a 3D nézetben és a térképen.
+   */
+  signs?: string[]
+  /** Vasúti átjárónál: van-e sorompó, illetve fénysorompó */
+  rail?: { barrier: boolean; lights: boolean }
 }
 
-export type Mode = 'practice' | 'exam' | 'review'
+/** tour: a teljes útvonal végigvezetése a vizsgabiztos hangos utasításaival */
+export type Mode = 'practice' | 'exam' | 'review' | 'tour'
 
 export type Outcome = 'ok' | 'late' | 'slow' | 'wrong' | 'timeout'
 
@@ -116,6 +125,12 @@ export interface Settings {
   signFlashMs: number
   /** Próbavizsgán minden válasz után rövid visszajelzés (helyes-e, kód), magyarázat nélkül */
   examFeedback: boolean
+  /** Mozdulat-gyakorlás a közeledés alatt (tükör, index, fék) */
+  actionDrill: boolean
+  /** Teljes útvonalon a vizsgabiztos hangos utasításai */
+  examinerVoice: boolean
+  /** Teljes útvonalon a haladási sebesség (km/h) */
+  tourSpeedKmh: number
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -129,4 +144,7 @@ export const DEFAULT_SETTINGS: Settings = {
   terrain: true,
   signFlashMs: 1200,
   examFeedback: true,
+  actionDrill: false,
+  examinerVoice: true,
+  tourSpeedKmh: 40,
 }

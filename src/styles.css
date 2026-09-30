@@ -375,6 +375,38 @@ label.inline input {
   gap: 12px;
   align-items: center;
 }
+.readiness {
+  margin-top: 8px;
+  max-width: 460px;
+}
+.readiness-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+  font-size: 0.9rem;
+}
+.readiness-bar {
+  display: flex;
+  height: 8px;
+  margin-top: 4px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--border, #e5e7eb);
+}
+.badge.health {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid;
+}
+.health-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+}
 .route-card h2 {
   margin: 0 0 2px;
 }
@@ -603,6 +635,66 @@ label.inline input {
 .drive-map {
   position: absolute;
   inset: 0;
+}
+kbd {
+  display: inline-block;
+  min-width: 1.4em;
+  padding: 0 5px;
+  border: 1px solid var(--border);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--text);
+  font: 600 0.78em/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  text-align: center;
+}
+/* Mozdulatok: tükör, index, fék a 3D nézet alján */
+.action-bar {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  z-index: 6;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  /* A jobb alsó sarokban a kis térkép van */
+  max-width: calc(60% - 32px);
+}
+.act {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px;
+  border: 2px solid rgb(255 255 255 / 60%);
+  border-radius: 10px;
+  background: rgb(17 24 39 / 78%);
+  color: #fff;
+  font-weight: 700;
+  cursor: pointer;
+}
+.act.on {
+  border-color: #22c55e;
+  background: rgb(22 101 52 / 88%);
+}
+.act.indicator.on {
+  border-color: #f59e0b;
+  animation: blink-indicator 0.8s steps(1) infinite;
+}
+@keyframes blink-indicator {
+  50% {
+    background: rgb(180 83 9 / 95%);
+  }
+}
+.action-feedback {
+  margin-bottom: 10px;
+}
+.scene-wait {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  padding: 16px;
+  color: #cbd5e1;
+  text-align: center;
 }
 .photo {
   position: absolute;

@@ -18,7 +18,7 @@ const ANSWER_MS = 6000
 type Phase = 'intro' | 'flash' | 'answer' | 'feedback' | 'done'
 type GroupFilter = SignGroup | 'all'
 
-const GROUPS: GroupFilter[] = ['all', 'elsobbsegi', 'veszely', 'tilalmi', 'utasito', 'tajekoztato']
+const GROUPS: GroupFilter[] = ['all', ...(Object.keys(GROUP_LABEL) as SignGroup[])]
 
 async function recordSign(code: string, correct: boolean, reactionMs: number | null) {
   const existing = await db.signCards.get(code)

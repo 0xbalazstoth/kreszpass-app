@@ -1,5 +1,5 @@
 import { signsForScene } from '../../data/signs'
-import type { LightState, Scene, SceneCar, Side } from '../../domain/questions'
+import type { LightState, RailLight, Scene, SceneCar, Side } from '../../domain/questions'
 import type { Turn } from '../../domain/types'
 
 /**
@@ -72,8 +72,19 @@ export interface Building {
   color: string
 }
 
+/** Vasúti átjáró: sínek keresztben, fényjelző és (ha van) sorompó a jobb oldalon */
+export interface Rail3D {
+  /** A sínpár középvonala */
+  z: number
+  light: RailLight
+  /** Fényjelző helye (az Andráskereszt oszlopán) */
+  lightAt?: { x: number; z: number }
+  barrier?: { x: number; z: number; down: boolean; length: number }
+}
+
 export interface Layout3D {
   kind: Scene['layout']
+  rail?: Rail3D
   asphalt: Rect[]
   sidewalks: Rect[]
   /** Fehér útburkolati jelek */
@@ -235,6 +246,40 @@ function buildRaw(scene: Scene): Layout3D {
     }
   }
 
+  if (scene.layout === 'road' && scene.rail) {
+    // A sínek a z = 0 vonalon; a megállás helye (Andráskereszt, fényjelző, sorompó) előttük, a jobb oldalon
+    const r = scene.rail
+    const crossZ = 4
+    return {
+      kind: 'road',
+      rail: {
+        z: 0,
+        light: r.light,
+        lightAt: r.light !== 'none' ? { x: HALF + 1.2, z: crossZ } : undefined,
+        barrier: r.barrier ? { x: HALF + 0.5, z: crossZ - 1, down: !!r.barrierDown, length: HALF + 0.3 } : undefined,
+      },
+      asphalt: [{ x: 0, z: 0, w: 2 * HALF, d: 2 * L }],
+      sidewalks: [],
+      markings: [...dashes('z', L, crossZ + 3, 0), ...dashes('z', -4, -L, 0), { x: HALF / 2, z: crossZ + 1.2, w: HALF, d: 0.4 }],
+      signs: [
+        { codes: signs.mine, x: HALF + 1.2, z: crossZ, rotY: 0, size: 1.1 },
+        { codes: signs.approach, x: HALF + 1.2, z: 38, rotY: 0, size: 1.0 },
+      ].filter((p) => p.codes.length),
+      lights: [],
+      cars: [],
+      peds: [],
+      buildings: buildingsAlong(rng, [
+        { axis: 'z', from: L, to: 16, offset: HALF + SIDEWALK + 6 },
+        { axis: 'z', from: L, to: 16, offset: -(HALF + SIDEWALK + 6) },
+        { axis: 'z', from: -16, to: -L, offset: HALF + SIDEWALK + 6 },
+        { axis: 'z', from: -16, to: -L, offset: -(HALF + SIDEWALK + 6) },
+      ]).map((b) => ({ ...b, h: Math.min(b.h, 9) })),
+      camera: { x: LANE / 2 - 0.45, y: 1.25, startZ: 62, stopZ: 16 },
+      lookYaw: 0,
+      turn: 'straight',
+    }
+  }
+
   if (scene.layout === 'road') {
     const oneWayTwoLanes = !!scene.blocker
     const hasZebra = scene.mySign === 'crossing'
@@ -266,9 +311,10 @@ function buildRaw(scene: Scene): Layout3D {
       cars: oneWayTwoLanes ? [] : [{ color: carColor(), from: [-LANE / 2, -60], to: [-LANE / 2, -25], rotY: HEADING.ahead, waiting: false }],
       peds,
       blocker: scene.blocker ? { x: -LANE / 2, z: 5.5 } : undefined,
+      // Előkert a járda mögött: a legközelebbi homlokzat ne töltse ki a látóteret
       buildings: buildingsAlong(rng, [
-        { axis: 'z', from: L, to: -L, offset: HALF + SIDEWALK + 1 },
-        { axis: 'z', from: L, to: -L, offset: -(HALF + SIDEWALK + 1) },
+        { axis: 'z', from: L, to: -L, offset: HALF + SIDEWALK + 3.5 },
+        { axis: 'z', from: L, to: -L, offset: -(HALF + SIDEWALK + 3.5) },
       ]),
       camera: { x: LANE / 2 - 0.45, y: 1.25, startZ: 62, stopZ: isSpeed ? 16 : 11 },
       lookYaw: 0,
@@ -315,6 +361,15 @@ function buildRaw(scene: Scene): Layout3D {
     signPosts.push({ codes: signs.cross, x: edge + 1.2, z: -(HALF + 1.2), rotY: Math.PI / 2, size: 0.9 })
   }
 
+  // Egyirányú célút: a tábla a befordulás után, a célút jobb oldalán, a befordulók felé
+  if (signs.target.length && scene.turn !== 'straight') {
+    signPosts.push(
+      scene.turn === 'left'
+        ? { codes: signs.target, x: -(edge + 2.5), z: -(HALF + 1.2), rotY: Math.PI / 2, size: 0.9 }
+        : { codes: signs.target, x: edge + 2.5, z: HALF + 1.2, rotY: -Math.PI / 2, size: 0.9 },
+    )
+  }
+
   const lights: Light3D[] = scene.light
     ? [
         { x: HALF + 1.0, z: edge + 0.6, rotY: 0, state: scene.light, height: 3.0 },
@@ -323,7 +378,8 @@ function buildRaw(scene: Scene): Layout3D {
       ]
     : []
 
-  const offset = HALF + SIDEWALK + 1.5
+  // Előkert a járda mögött, mint az utcán
+  const offset = HALF + SIDEWALK + 3
   return {
     kind: 'junction',
     asphalt,
