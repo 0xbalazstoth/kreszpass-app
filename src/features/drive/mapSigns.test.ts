@@ -30,7 +30,7 @@ describe('a térkép táblái', () => {
 
   it('körforgalomnál az előjelző tábla messzebb áll', () => {
     const pins = sceneMapPins(route, at(250), { layout: 'roundabout', turn: 'straight', mySign: 'roundabout', cars: [] })
-    expect(pins.map((p) => p.sign)).toEqual(['B-001', 'A-056'])
-    expect(pins[1].lngLat[0]).toBeLessThan(pins[0].lngLat[0])
+    expect(pins.map((p) => p.sign)).toEqual(['B-001', 'D-017', 'A-056'])
+    expect(pins[2].lngLat[0]).toBeLessThan(pins[0].lngLat[0])
   })
 })

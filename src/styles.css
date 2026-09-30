@@ -592,6 +592,17 @@ textarea {
   min-height: 32px;
   padding: 3px 8px;
 }
+.ring-fields {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.9rem;
+}
+.ring-fields input {
+  width: 52px;
+  min-height: 32px;
+  padding: 3px 6px;
+}
 .sit-preview {
   display: grid;
   grid-template-columns: 140px 1fr;
@@ -994,6 +1005,20 @@ kbd {
   color: #fff;
   font-weight: 700;
   pointer-events: none;
+}
+/* A belső visszapillantó tükör kerete: a képet a RearMirror rajzolja ugyanide (felül középen, a szélesség 30%-a) */
+.rear-mirror {
+  position: absolute;
+  top: 10px;
+  left: 35%;
+  width: 30%;
+  aspect-ratio: 3.4;
+  border: 4px solid #111827;
+  border-radius: 14px;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 35%);
+  pointer-events: none;
+  box-sizing: border-box;
+  z-index: 3;
 }
 .hud-arrow {
   font-size: 1.4rem;

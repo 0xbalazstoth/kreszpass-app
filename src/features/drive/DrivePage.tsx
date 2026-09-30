@@ -8,6 +8,7 @@ import { approachFrames, type MlImage } from '../../data/mapillary'
 import { describeExpected, expectedActions, scoreActions, type ActionEvent, type ActionKind, type ActionResult } from '../../domain/actions'
 import { EVAL_CODES } from '../../domain/evalCodes'
 import { EXAMINER_LEAD_M, examinerLine } from '../../domain/examiner'
+import { isGenerated, withHazards } from '../../domain/hazards'
 import { attemptsBySituation, weakest } from '../../domain/progress'
 import { buildPrompts, KIND_LABEL, type Prompt } from '../../domain/questions'
 import { classifyAnswer } from '../../domain/scoring'
@@ -167,7 +168,7 @@ export function DrivePage({ routeId, mode, focus }: Props) {
         if (focus === 'weak') {
           const sessions = await db.sessions.toArray()
           list = weakest(list, attemptsBySituation(sessions.flatMap((x) => x.attempts)), WEAK_COUNT)
-        }
+        } else list = withHazards(list, r.line, r.id, st.hazards)
       }
       const built: Step[] = []
       for (const s of list) {
@@ -200,7 +201,7 @@ export function DrivePage({ routeId, mode, focus }: Props) {
     [step, prevD, settings, mode, actionsOn],
   )
   /** Ennél a helyzetnél van-e mozdulat-gyakorlás */
-  const drill = actionsOn && step?.firstOfSituation ? expectedActions(step.situation) : null
+  const drill = actionsOn && step?.firstOfSituation ? expectedActions(step.situation, step.prompt.scene) : null
 
   // ------------------------------------------------ Közeledés
   useEffect(() => {
@@ -307,7 +308,8 @@ export function DrivePage({ routeId, mode, focus }: Props) {
       const all = [...attempts, attempt]
       setAttempts(all)
       setLast({ attempt, prompt: step.prompt })
-      if (step.lastOfSituation) {
+      // A váratlan helyzetek nincsenek eltárolva, ezért ismétlésre sem kerülnek
+      if (step.lastOfSituation && !isGenerated(step.situation)) {
         const mine = all.filter((a) => a.situationId === step.situation.id)
         const w = worstOutcome(mine)
         void recordReview(step.situation, w.outcome, w.reactionMs, settings)
@@ -569,10 +571,18 @@ export function DrivePage({ routeId, mode, focus }: Props) {
   // Teljes útvonalon a 3D jelenet a helyzet előtti utolsó szakaszon indul; mozdulat-gyakorlásnál a hosszabb közeledéshez igazodik
   const sceneMs = mode === 'tour' ? t.approachMs : (plan?.durationMs ?? t.approachMs)
   const sceneVisible = mode !== 'tour' || phase !== 'approach' || sceneShown
+  // A körforgalom második (kihajtási) kérdésénél a körpályán, íven haladunk a kijárat elé
+  const sceneAnimated = step.firstOfSituation || step.prompt.scene.roundabout?.phase === 'exit'
   const scenePane = (
     <div className={`pane ${mainView === 'scene' ? 'pane-main' : 'pane-inset'}`}>
       {sceneVisible ? (
-        <DriveScene key={idx} scene={step.prompt.scene} animate={step.firstOfSituation} approachMs={sceneMs} enabled={t.view3d} />
+        <DriveScene
+          key={idx}
+          scene={step.prompt.scene}
+          animate={sceneAnimated}
+          approachMs={sceneMs}
+          enabled={t.view3d}
+        />
       ) : (
         <div className="scene-wait">A 3D nézet a következő helyzet előtt jelenik meg</div>
       )}

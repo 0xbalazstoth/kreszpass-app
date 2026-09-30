@@ -129,3 +129,85 @@ describe('valós táblák és vasúti átjáró', () => {
     expect(res.find((s) => s.turn === 'left')!.signs).toContain('E-012')
   })
 })
+
+describe('körforgalom: hányadik kijárat', () => {
+  // Kör a (19.0, 47.5) körül, kb. 20 m sugárral; a csomópontok az óramutatóval ellentétesen követik egymást
+  const c: [number, number] = [19.0, 47.5]
+  const R_LAT = 20 / 111_320
+  const R_LON = 20 / (111_320 * Math.cos((47.5 * Math.PI) / 180))
+  const ringNode = (k: number) => n(100 + k, c[0] + R_LON * Math.cos((k * Math.PI) / 4), c[1] + R_LAT * Math.sin((k * Math.PI) / 4))
+  const far = (id: number, angle: number) => n(id, c[0] + 6 * R_LON * Math.cos(angle), c[1] + 6 * R_LAT * Math.sin(angle))
+  const nodes: OsmNode[] = [...Array.from({ length: 8 }, (_, k) => ringNode(k)), far(300, -Math.PI / 2), far(301, 0), far(302, Math.PI / 2), far(303, Math.PI), far(304, Math.PI / 4)]
+  const at = new Map(nodes.map((x) => [x.id, x]))
+  const w = (id: number, ids: number[], tags: Record<string, string>): OsmWay => ({
+    type: 'way',
+    id,
+    nodes: ids,
+    geometry: ids.map((i) => ({ lon: at.get(i)!.lon, lat: at.get(i)!.lat })),
+    tags,
+  })
+  const map: OsmData = {
+    elements: [
+      w(200, [100, 101, 102, 103, 104, 105, 106, 107, 100], { highway: 'primary', junction: 'roundabout', lanes: '2' }),
+      w(201, [106, 300], { highway: 'primary', name: 'Déli út' }),
+      w(202, [100, 301], { highway: 'residential', name: 'Keleti utca' }),
+      w(203, [102, 302], { highway: 'primary', name: 'Északi út' }),
+      w(204, [104, 303], { highway: 'residential', name: 'Nyugati utca' }),
+      // Csak befelé egyirányú ág: ezen nem lehet kihajtani, nem számít kijáratnak
+      w(205, [304, 101], { highway: 'residential', oneway: 'yes' }),
+    ],
+  }
+  const pos = (id: number) => [at.get(id)!.lon, at.get(id)!.lat]
+  const line: LineString = { type: 'LineString', coordinates: [300, 106, 107, 100, 101, 102, 302].map(pos) }
+  const res = generateSituations(line, map, { routeId: 'r', newId: () => 'k' })
+
+  it('délről behajtva, északon kihajtva a 2. kijárat a 4-ből (a befelé egyirányú ág nem számít)', () => {
+    const r = res.find((s) => s.kind === 'roundabout')!
+    expect(r.roundabout).toEqual({ exit: 2, exits: 4, lanes: 2, turn: 'straight' })
+    expect(r.needsReview).toBe(false)
+  })
+
+  it('kiskörforgalomnál (mini_roundabout) a csatlakozó ágak irányából számol', () => {
+    // Két út a középpontban (500) keresztezi egymást
+    const cross = (id: number, ids: number[]): OsmWay => ({
+      type: 'way',
+      id,
+      nodes: ids,
+      geometry: ids.map((i) => (i === 500 ? { lon: c[0], lat: c[1] } : { lon: at.get(i)!.lon, lat: at.get(i)!.lat })),
+      tags: { highway: 'residential' },
+    })
+    const mini: OsmData = { elements: [n(500, c[0], c[1], { highway: 'mini_roundabout' }), cross(210, [300, 500, 302]), cross(211, [301, 500, 303])] }
+    const miniLine: LineString = { type: 'LineString', coordinates: [pos(300), c, pos(303)] }
+    const r = generateSituations(miniLine, mini, { routeId: 'r', newId: () => 'm' }).find((s) => s.kind === 'roundabout')!
+    // Délről nyugatra: kelet (1.), észak (2.), nyugat (3.)
+    expect(r.roundabout).toMatchObject({ exit: 3, exits: 4, turn: 'left' })
+  })
+})
+
+describe('villamos- és autóbuszmegállók', () => {
+  const extra: OsmData = {
+    elements: [
+      ...osm.elements,
+      // Villamosmegálló a Fő utcán (a sínek az úttesten)
+      n(970, 19.003, 47.50003, { railway: 'tram_stop', name: 'Fő utca' }),
+      // Autóbuszmegálló a jobb (déli) oldalon
+      n(971, 19.0025, 47.49993, { highway: 'bus_stop' }),
+      // Autóbuszmegálló a bal oldalon: a szembejövő irányé
+      n(972, 19.0045, 47.50007, { highway: 'bus_stop' }),
+    ],
+  }
+  const res = generateSituations(route, extra, { routeId: 'r1', newId: () => 't' })
+
+  it('a villamosmegállót felismeri, a járdaszigetet kézzel kell jelölni', () => {
+    const tram = res.filter((s) => s.kind === 'tram_stop')
+    expect(tram).toHaveLength(1)
+    expect(tram[0].transit).toEqual({ kind: 'tram' })
+    expect(tram[0].needsReview).toBe(true)
+  })
+
+  it('csak a jobb oldali autóbuszmegálló számít', () => {
+    const bus = res.filter((s) => s.kind === 'bus_stop')
+    expect(bus).toHaveLength(1)
+    expect(Math.abs(bus[0].d - 188)).toBeLessThan(15)
+  })
+})

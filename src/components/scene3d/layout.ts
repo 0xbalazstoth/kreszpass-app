@@ -21,9 +21,11 @@ export interface Rect {
   /** Középpont */
   x: number
   z: number
-  /** Kiterjedés X és Z irányban */
+  /** Kiterjedés X és Z irányban (elforgatás előtt) */
   w: number
   d: number
+  /** Y tengely körüli elforgatás (radián): ferde utakhoz (körforgalom ágai) */
+  rotY?: number
 }
 
 export interface SignPost3D {
@@ -82,6 +84,44 @@ export interface Rail3D {
   barrier?: { x: number; z: number; down: boolean; length: number }
 }
 
+/** Egyéb szereplők és tárgyak: járművek, akadályok, villamos, vonat… */
+export type PropKind =
+  | 'van'
+  | 'ambulance'
+  | 'car'
+  | 'cone'
+  | 'barrier'
+  | 'dirt'
+  | 'ball'
+  | 'child'
+  | 'cyclist'
+  | 'tram'
+  | 'bus'
+  | 'train'
+  | 'tractor'
+  | 'island'
+  | 'tram_track'
+
+export interface Prop3D {
+  kind: PropKind
+  /** Kiinduló helyzet (x, z) */
+  at: [number, number]
+  /** Y körüli forgatás: 0 = a −Z felé néz (mint mi) */
+  rotY: number
+  /**
+   * Mozgás: approach – a közeledés végére ér a célba (lassulva); after – a kérdés megjelenése után indul;
+   * always – a jelenet elejétől egyenletesen halad. A sebesség m/s, a késleltetés s.
+   */
+  move?: { to: [number, number]; when: 'approach' | 'after' | 'always'; speed?: number; delay?: number }
+  color?: string
+  /** Nyitott ajtó (parkoló autó, villamos, busz) */
+  open?: boolean
+  /** Villogó irányjelző vagy vészvillogó */
+  blink?: 'left' | 'right' | 'hazard'
+  /** Változó méretű tárgyaknál [szélesség, hossz] (járdasziget, sínpár, villamos hossza) */
+  size?: [number, number]
+}
+
 export interface Layout3D {
   kind: Scene['layout']
   rail?: Rail3D
@@ -95,8 +135,17 @@ export interface Layout3D {
   cars: Car3D[]
   peds: Ped3D[]
   blocker?: { x: number; z: number }
+  props?: Prop3D[]
+  /** Visszapillantó tükör megjelenítése (hátulról érkező mentőautó) */
+  mirror?: boolean
+  /** Sziréna hangja */
+  siren?: boolean
   buildings: Building[]
-  camera: { x: number; y: number; startZ: number; stopZ: number }
+  /**
+   * A kamera útja: egyenesen a startZ-ből a stopZ-be, vagy (körforgalomban) íven: a körpálya közepétől r sugárban,
+   * a0 → a1 szögig (radián, az óramutatóval ellentétesen). Az íven a kamera a menetirányba néz.
+   */
+  camera: { x: number; y: number; startZ: number; stopZ: number; arc?: { r: number; a0: number; a1: number } }
   /** Megállás után a vezető ennyit fordítja a fejét (radián, + = balra), hogy lássa a partnert */
   lookYaw: number
   turn: Turn
@@ -191,60 +240,7 @@ function buildRaw(scene: Scene): Layout3D {
   const carColor = () => CAR_COLORS[Math.floor(rng() * CAR_COLORS.length)]
   const L = 70 // az utak hossza a középponttól
 
-  if (scene.layout === 'roundabout') {
-    const R = RING_OUTER
-    // A kérdés a bejárat előtt jön, amikor a tábla és a körben érkező még jól látszik
-    const stopZ = R + 12
-    const asphalt: Rect[] = [
-      { x: 0, z: (R + L) / 2, w: 2 * HALF, d: L - R + 2 },
-      { x: 0, z: -(R + L) / 2, w: 2 * HALF, d: L - R + 2 },
-      { x: (R + L) / 2, z: 0, w: L - R + 2, d: 2 * HALF },
-      { x: -(R + L) / 2, z: 0, w: L - R + 2, d: 2 * HALF },
-    ]
-    const markings: Rect[] = [
-      ...dashes('z', R + 2, L, 0),
-      ...dashes('z', -R - 2, -L, 0),
-      ...dashes('x', R + 2, L, 0),
-      ...dashes('x', -R - 2, -L, 0),
-      // Elsőbbségadás („cápafog”) a bejáratnál
-      ...[0.4, 1.2, 2.0, 2.8].map((x) => ({ x, z: R + 1, w: 0.5, d: 0.5 })),
-    ]
-    if (scene.pedestrian?.where === 'exit_crossing') markings.push(...zebra('z', -(R + 4), [-HALF, HALF]))
-    const cars: Car3D[] = scene.cars.map((c) => {
-      const r = (RING_INNER + RING_OUTER) / 2
-      // Az óramutatóval ellentétesen (felülről nézve) kering, a bejáratunk a 270°-os (déli) pontnál van
-      return c.from === 'left'
-        ? { color: carColor(), from: [0, 0], to: [0, 0], rotY: 0, waiting: false, arc: { r, a0: Math.PI * 0.95, a1: Math.PI * 1.28 } }
-        : { color: carColor(), from: [0, 0], to: [0, 0], rotY: 0, waiting: false, arc: { r, a0: Math.PI * 0.1, a1: Math.PI * 0.45 } }
-    })
-    const peds: Ped3D[] =
-      scene.pedestrian?.where === 'exit_crossing'
-        ? [{ from: [HALF + 1, -(R + 4)], to: [-HALF - 1, -(R + 4)], state: 'crossing', rotY: Math.PI / 2 }]
-        : []
-    return {
-      kind: 'roundabout',
-      asphalt,
-      sidewalks: [],
-      markings,
-      ring: { inner: RING_INNER, outer: R },
-      signs: [
-        { codes: signs.mine, x: HALF + 1.2, z: R + 2.5, rotY: 0, size: 1.1 },
-        ...signs.approach.map((code) => ({ codes: [code], x: HALF + 1.2, z: R + 38, rotY: 0, size: 1.0 })),
-      ].filter((s) => s.codes.length),
-      lights: [],
-      cars,
-      peds,
-      buildings: buildingsAlong(rng, [
-        { axis: 'z', from: R + 8, to: L, offset: HALF + SIDEWALK + 2 },
-        { axis: 'z', from: R + 8, to: L, offset: -(HALF + SIDEWALK + 2) },
-        { axis: 'z', from: -R - 8, to: -L, offset: HALF + SIDEWALK + 2 },
-        { axis: 'z', from: -R - 8, to: -L, offset: -(HALF + SIDEWALK + 2) },
-      ]),
-      camera: { x: LANE / 2 - 0.45, y: 1.25, startZ: 62, stopZ },
-      lookYaw: 0,
-      turn: scene.turn,
-    }
-  }
+  if (scene.layout === 'roundabout') return roundaboutLayout(scene, rng, signs, carColor, L)
 
   if (scene.layout === 'road' && scene.rail) {
     // A sínek a z = 0 vonalon; a megállás helye (Andráskereszt, fényjelző, sorompó) előttük, a jobb oldalon
@@ -266,19 +262,30 @@ function buildRaw(scene: Scene): Layout3D {
         { codes: signs.approach, x: HALF + 1.2, z: 38, rotY: 0, size: 1.0 },
       ].filter((p) => p.codes.length),
       lights: [],
-      cars: [],
+      // Torlódás a sínek mögött: álló autók a sávunkban
+      cars: r.queue ? [-6.5, -13, -19.5].map((z) => ({ color: carColor(), from: [LANE / 2, z] as [number, number], to: [LANE / 2, z] as [number, number], rotY: 0, waiting: true })) : [],
       peds: [],
+      props: [
+        // A vonat balról közeledik: a kérdés idején kb. 35 m-re van, utána áthalad előttünk
+        ...(r.train ? [{ kind: 'train' as const, at: [-55, 0] as [number, number], rotY: -Math.PI / 2, move: { to: [160, 0] as [number, number], when: 'always' as const, speed: 8 } }] : []),
+        ...(r.slowAhead
+          ? [{ kind: 'tractor' as const, at: [LANE / 2, 22] as [number, number], rotY: 0, move: { to: [LANE / 2, -90] as [number, number], when: 'always' as const, speed: 3 } }]
+          : []),
+      ],
       buildings: buildingsAlong(rng, [
         { axis: 'z', from: L, to: 16, offset: HALF + SIDEWALK + 6 },
         { axis: 'z', from: L, to: 16, offset: -(HALF + SIDEWALK + 6) },
         { axis: 'z', from: -16, to: -L, offset: HALF + SIDEWALK + 6 },
         { axis: 'z', from: -16, to: -L, offset: -(HALF + SIDEWALK + 6) },
       ]).map((b) => ({ ...b, h: Math.min(b.h, 9) })),
-      camera: { x: LANE / 2 - 0.45, y: 1.25, startZ: 62, stopZ: 16 },
+      // Lassú jármű mögött hátrébb állunk meg
+      camera: { x: LANE / 2 - 0.45, y: 1.25, startZ: 62, stopZ: r.slowAhead ? 28 : 16 },
       lookYaw: 0,
       turn: 'straight',
     }
   }
+
+  if (scene.layout === 'road' && (scene.hazard || scene.transit)) return streetLayout(scene, rng, signs, carColor, L)
 
   if (scene.layout === 'road') {
     const oneWayTwoLanes = !!scene.blocker
@@ -402,6 +409,322 @@ function buildRaw(scene: Scene): Layout3D {
   }
 }
 
+type SceneSignsFull = ReturnType<typeof signsForScene>
+
+/** Irányvektor a körforgalom középpontjától a szög felé (felülnézet: x = cos a, z = −sin a) */
+function ringDir(a: number): [number, number] {
+  return [Math.cos(a), -Math.sin(a)]
+}
+
+/** Az iránnyal merőleges (jobbra mutató, ha befelé nézünk) egységvektor */
+function ringPerp(a: number): [number, number] {
+  return [Math.sin(a), Math.cos(a)]
+}
+
+/** Téglalap a körforgalom egyik ága mentén (from–to távolság a középponttól) */
+function armRect(a: number, from: number, to: number, w: number, across = 0): Rect {
+  const [dx, dz] = ringDir(a)
+  const [px, pz] = ringPerp(a)
+  const m = (from + to) / 2
+  return { x: dx * m + px * across, z: dz * m + pz * across, w, d: to - from, rotY: a - Math.PI / 2 }
+}
+
+/** A körpálya forgalmi sávjainak középvonala: egysávosnál a pálya közepe, kétsávosnál a belső és a külső sáv */
+export function ringLaneRadius(lanes: number, lane: 'inner' | 'outer' | 'single'): number {
+  if (lanes < 2 || lane === 'single') return (RING_INNER + RING_OUTER) / 2
+  const w = (RING_OUTER - RING_INNER) / 2
+  return lane === 'inner' ? RING_INNER + w / 2 : RING_OUTER - w / 2
+}
+
+/**
+ * Körforgalom a valós kijáratszámmal: az ágak egyenletesen, a behajtási ág délen (felénk).
+ * Behajtás előtt a kamera egyenesen közeledik; a körben (exit) íven halad, és a kijárat előtt áll meg.
+ */
+function roundaboutLayout(scene: Scene, rng: () => number, signs: SceneSignsFull, carColor: () => string, L: number): Layout3D {
+  const R = RING_OUTER
+  const info = scene.roundabout ?? { exits: 4, exit: 2, lanes: 1, phase: 'entry' as const }
+  const n = Math.max(3, Math.min(6, info.exits))
+  const armAngle = (k: number) => -Math.PI / 2 + (k * 2 * Math.PI) / n
+  // A 0. ág a behajtási ág; az n-edik kijárat (vagy azon túl) a megfordulás, ugyanide
+  const exitK = Math.min(info.exit, n)
+  const exitA = armAngle(exitK)
+  const lanes = Math.min(2, info.lanes)
+
+  const asphalt: Rect[] = Array.from({ length: n }, (_, k) => armRect(armAngle(k), R - 2, L, 2 * HALF))
+  const markings: Rect[] = []
+  for (let k = 0; k < n; k++) {
+    const a = armAngle(k)
+    // Felezővonal az ágakon
+    for (let p = R + 2; p < L; p += 6) markings.push(armRect(a, p, p + 3, 0.15))
+  }
+  // Elsőbbségadás („cápafog”) a behajtásnál
+  markings.push(...[0.4, 1.2, 2.0, 2.8].map((x) => ({ x, z: R + 1, w: 0.5, d: 0.5 })))
+  if (lanes >= 2) {
+    // Sávelválasztó szaggatott kör
+    const r = (RING_INNER + R) / 2
+    for (let i = 0; i < 40; i++) {
+      if (i % 2) continue
+      const a = (i / 40) * Math.PI * 2
+      const [dx, dz] = ringDir(a)
+      markings.push({ x: dx * r, z: dz * r, w: 0.15, d: 1.1, rotY: a })
+    }
+  }
+  const peds: Ped3D[] = []
+  if (scene.pedestrian?.where === 'exit_crossing') {
+    // Zebra a kijárati ágon, a csíkok a forgalommal párhuzamosak
+    for (let o = -HALF + 0.5; o < HALF - 0.2; o += 0.9) markings.push(armRect(exitA, R + 2.5, R + 5.5, 0.5, o))
+    const [dx, dz] = ringDir(exitA)
+    const [px, pz] = ringPerp(exitA)
+    const c: [number, number] = [dx * (R + 4), dz * (R + 4)]
+    peds.push({ from: [c[0] + px * (HALF + 1), c[1] + pz * (HALF + 1)], to: [c[0] - px * (HALF + 1), c[1] - pz * (HALF + 1)], state: 'crossing', rotY: exitA })
+  }
+
+  const cars: Car3D[] = []
+  let camera: Layout3D['camera'] = { x: LANE / 2 - 0.45, y: 1.25, startZ: 62, stopZ: R + 12 }
+  let lookYaw = 0
+  if (info.phase === 'entry') {
+    for (const c of scene.cars) {
+      const r = ringLaneRadius(lanes, 'outer')
+      // Az óramutatóval ellentétesen (felülről nézve) kering, a bejáratunk a 270°-os (déli) pontnál van
+      cars.push(
+        c.from === 'left'
+          ? { color: carColor(), from: [0, 0], to: [0, 0], rotY: 0, waiting: false, arc: { r, a0: Math.PI * 0.95, a1: Math.PI * 1.28 } }
+          : { color: carColor(), from: [0, 0], to: [0, 0], rotY: 0, waiting: false, arc: { r, a0: Math.PI * 0.1, a1: Math.PI * 0.45 } },
+      )
+    }
+  } else {
+    // A körben: távolabbi kijárathoz kétsávos körben a belső sávban haladunk
+    const own = lanes >= 2 ? (info.exit > 2 ? 'inner' : 'outer') : 'single'
+    const r = ringLaneRadius(lanes, own)
+    // A várakozó autó a kijáratunk előtti bejáratnál áll, ott állunk meg; egyébként a kijárat előtt
+    const stopK = scene.roundabout?.partner === 'entry_waiting' && exitK > 1 ? exitK - 1 : exitK
+    const a1 = armAngle(stopK) - 0.42
+    const a0 = Math.max(armAngle(0) + 0.3, a1 - 1.9)
+    camera = { x: 0, y: 1.25, startZ: 0, stopZ: 0, arc: { r, a0, a1 } }
+    // A kijárat előtt a vezető jobbra, a kijárat és a kijárati zebra felé néz
+    lookYaw = -0.5
+    if (scene.roundabout?.partner === 'outer_car') {
+      // A külső sávban mellettünk, kissé előttünk: a vezető jobbra, a válla fölött néz, mielőtt átsorolna
+      cars.push({ color: carColor(), from: [0, 0], to: [0, 0], rotY: 0, waiting: false, arc: { r: ringLaneRadius(lanes, 'outer'), a0: a0 + 0.08, a1: a1 + 0.12 } })
+      lookYaw = -0.95
+    }
+    if (scene.roundabout?.partner === 'entry_waiting') {
+      const a = armAngle(stopK)
+      const [dx, dz] = ringDir(a)
+      const [px, pz] = ringPerp(a)
+      // A befelé haladók jobb oldala a −perp irány; a kocsi a körpálya felé néz
+      const pos: [number, number] = [dx * (R + 3.5) - px * (LANE / 2), dz * (R + 3.5) - pz * (LANE / 2)]
+      cars.push({ color: carColor(), from: pos, to: pos, rotY: a + Math.PI / 2, waiting: true })
+      lookYaw = -0.35
+    }
+  }
+
+  // Házak az ágak között, a behajtási ág mentén utcasor
+  const buildings: Building[] = buildingsAlong(rng, [
+    { axis: 'z', from: R + 8, to: L, offset: HALF + SIDEWALK + 2 },
+    { axis: 'z', from: R + 8, to: L, offset: -(HALF + SIDEWALK + 2) },
+  ])
+  // A behajtási ág melletti két szögben már az utcasor áll
+  for (let k = 2; k < n; k++) {
+    const a = (armAngle(k - 1) + armAngle(k)) / 2
+    const [dx, dz] = ringDir(a)
+    const size = 10 + rng() * 4
+    // Távolabb és alacsonyabban, hogy a körön át látszódjanak a kijáratok
+    buildings.push({ x: dx * (R + 30), z: dz * (R + 30), w: size, d: size, h: 6 + rng() * 7, color: BUILDING_COLORS[Math.floor(rng() * BUILDING_COLORS.length)] })
+  }
+
+  return {
+    kind: 'roundabout',
+    asphalt,
+    sidewalks: [],
+    markings,
+    ring: { inner: RING_INNER, outer: R },
+    signs: [
+      { codes: signs.mine, x: HALF + 1.2, z: R + 2.5, rotY: 0, size: 1.0 },
+      ...signs.approach.map((code) => ({ codes: [code], x: HALF + 1.2, z: R + 38, rotY: 0, size: 1.0 })),
+    ].filter((s) => s.codes.length),
+    lights: [],
+    cars,
+    peds,
+    buildings,
+    camera,
+    lookYaw,
+    turn: scene.turn,
+  }
+}
+
+/** A mozgó/álló tárgy helyzete: a közeledés állása (0..1), a jelenet kezdete és a kérdés megjelenése óta eltelt idő (s) */
+export function propPose(p: Prop3D, progress: number, elapsed: number, sinceStop: number): [number, number] {
+  const m = p.move
+  if (!m) return p.at
+  const total = Math.hypot(m.to[0] - p.at[0], m.to[1] - p.at[1]) || 1
+  let f: number
+  if (m.when === 'approach') f = easeOut(progress)
+  else {
+    const t = (m.when === 'after' ? sinceStop : elapsed) - (m.delay ?? 0)
+    f = Math.min(1, Math.max(0, (t * (m.speed ?? 1)) / total))
+  }
+  return [p.at[0] + (m.to[0] - p.at[0]) * f, p.at[1] + (m.to[1] - p.at[1]) * f]
+}
+
+/**
+ * Utcai jelenetek: váratlan helyzetek (akadály, labda, kinyíló ajtó, kerékpáros, mentőautó),
+ * villamos- és autóbuszmegálló. Kétirányú utca, szükség szerint parkolósávval, buszöböllel vagy középen futó villamossal.
+ */
+function streetLayout(scene: Scene, rng: () => number, signs: SceneSignsFull, carColor: () => string, L: number): Layout3D {
+  const own = LANE / 2
+  const camX = own - 0.45
+  const tramMiddle = scene.transit?.kind === 'tram' && scene.transit.island
+  const parking = scene.hazard === 'ball_child' || scene.hazard === 'door_open'
+  const bay = scene.transit?.kind === 'bus'
+  // A jobb oldali úttest széle (parkolósávval szélesebb) és a bal széle (középen futó villamosnál távolabb)
+  const rightEdge = HALF + (parking ? 2.4 : 0)
+  const leftEdge = tramMiddle ? -9.7 : -HALF
+
+  const asphalt: Rect[] = [{ x: (rightEdge + leftEdge) / 2, z: 0, w: rightEdge - leftEdge, d: 2 * L }]
+  const sidewalks: Rect[] = [{ x: leftEdge - SIDEWALK / 2, z: 0, w: SIDEWALK, d: 2 * L }]
+  if (bay) {
+    // Buszöböl: z ∈ [−24, −1], a járda mögötte
+    asphalt.push({ x: HALF + 1.5, z: -12.5, w: 3, d: 23 })
+    sidewalks.push({ x: rightEdge + SIDEWALK / 2, z: (L - 1) / 2, w: SIDEWALK, d: L + 1 })
+    sidewalks.push({ x: rightEdge + SIDEWALK / 2, z: -(L + 24) / 2, w: SIDEWALK, d: L - 24 })
+    sidewalks.push({ x: HALF + 3 + SIDEWALK / 2, z: -12.5, w: SIDEWALK, d: 23 })
+  } else sidewalks.push({ x: rightEdge + SIDEWALK / 2, z: 0, w: SIDEWALK, d: 2 * L })
+
+  const markings: Rect[] = tramMiddle ? [...dashes('z', L, -L, -6.2)] : [...dashes('z', L, -L, 0)]
+  const cars: Car3D[] = []
+  const peds: Ped3D[] = []
+  const props: Prop3D[] = []
+  const posts: SignPost3D[] = []
+  let stopZ = 12
+  let mirror = false
+  let siren = false
+  const oncoming = (delays: number[], x = -own) =>
+    delays.forEach((delay) =>
+      props.push({ kind: 'car', at: [x, -75], rotY: Math.PI, color: carColor(), move: { to: [x, 90], when: 'always', speed: 10, delay } }),
+    )
+  // Parkoló autók eltérő színekkel (egymás után ne legyen két egyforma)
+  const first = Math.floor(rng() * CAR_COLORS.length)
+  const parkedRow = (zs: number[]) =>
+    zs.forEach((z, i) => props.push({ kind: 'car', at: [HALF + 1.2, z], rotY: 0, color: CAR_COLORS[(first + i * 3) % CAR_COLORS.length] }))
+
+  switch (scene.hazard) {
+    case 'parked_oncoming':
+      props.push({ kind: 'van', at: [own + 0.3, -3], rotY: 0, blink: 'hazard' })
+      oncoming([0, 3.5])
+      stopZ = 11
+      break
+    case 'parked_clear':
+      props.push({ kind: 'van', at: [own + 0.3, -3], rotY: 0, blink: 'hazard' })
+      stopZ = 17
+      break
+    case 'roadworks': {
+      // Terelőkúpok ferdén a sávunkon át, mögöttük a munkaterület korláttal
+      for (let i = 0; i < 6; i++) props.push({ kind: 'cone', at: [HALF - 0.3 - (i * (HALF - 0.6)) / 5, 7 - i * 1.3], rotY: 0 })
+      props.push({ kind: 'barrier', at: [own + 0.2, 0.4], rotY: 0, size: [HALF - 0.5, 0] })
+      for (let z = -3; z > -30; z -= 4) props.push({ kind: 'cone', at: [0.35, z], rotY: 0 })
+      props.push({ kind: 'dirt', at: [own + 0.4, -12], rotY: 0, size: [2.2, 7] })
+      posts.push({ codes: signs.mine, x: own + 0.2, z: 1.2, rotY: 0, size: 0.8 })
+      stopZ = 16
+      break
+    }
+    case 'ball_child':
+      parkedRow([4.5, -6, -13, -20])
+      props.push({ kind: 'ball', at: [HALF + 1.4, -0.6], rotY: 0, move: { to: [0.3, -0.6], when: 'always', speed: 2.2, delay: 1 } })
+      props.push({ kind: 'child', at: [HALF + 2.9, -1.2], rotY: Math.PI / 2, move: { to: [HALF + 0.2, -1.2], when: 'after', speed: 2.2, delay: 0.5 } })
+      stopZ = 12
+      break
+    case 'door_open':
+      parkedRow([-12, -19])
+      // Világos autó, hogy a kinyíló sötét ajtókeret és a kiszálló vezető jól látszódjon
+      props.push({ kind: 'car', at: [HALF + 1.2, -3], rotY: 0, color: '#e5e7eb', open: true })
+      oncoming([0.5])
+      stopZ = 9
+      break
+    case 'cyclist':
+      props.push({ kind: 'cyclist', at: [HALF - 0.7, 30], rotY: 0, move: { to: [HALF - 0.7, -90], when: 'always', speed: 4.5 } })
+      oncoming([0, 2.2, 5])
+      stopZ = 30
+      break
+    case 'emergency':
+      // Hátulról érkezik: a tükörben látszik
+      props.push({ kind: 'ambulance', at: [own, 115], rotY: 0, move: { to: [own, 27], when: 'approach' } })
+      mirror = true
+      siren = true
+      stopZ = 16
+      break
+  }
+
+  const t = scene.transit
+  if (t?.kind === 'tram') {
+    if (!t.island) {
+      // Közös sáv: a villamos a mi sávunkban jár, az utasok a járdáról az úttesten át szállnak
+      props.push({ kind: 'tram_track', at: [own, 0], rotY: 0, size: [0, 2 * L] })
+      if (t.state === 'doors_open') {
+        props.push({ kind: 'tram', at: [own, -20], rotY: 0, open: true, size: [0, 30] })
+        for (const [i, z] of [-9, -17.5, -26].entries())
+          peds.push({ from: [HALF + 1.4, z - i * 0.3], to: [own + 1.45, z], state: 'crossing', rotY: Math.PI / 2 })
+        stopZ = 4
+      } else {
+        props.push({ kind: 'tram', at: [own, -1], rotY: 0, size: [0, 30], move: { to: [own, -24], when: 'approach' } })
+        peds.push({ from: [HALF + 1.3, -38], to: [HALF + 1.3, -38], state: 'waiting', rotY: Math.PI / 2 })
+        peds.push({ from: [HALF + 1.6, -42], to: [HALF + 1.6, -42], state: 'waiting', rotY: Math.PI / 2 })
+        stopZ = 5
+      }
+      posts.push({ codes: signs.mine, x: HALF + 1.2, z: t.state === 'doors_open' ? -3 : -34, rotY: 0, size: 0.9 })
+    } else {
+      // Középen futó villamos, járdasziget a villamos és a mi sávunk között, zebra a szigetről a járdára
+      props.push({ kind: 'tram_track', at: [-4, 0], rotY: 0, size: [0, 2 * L] })
+      props.push({ kind: 'island', at: [-1.3, -20], rotY: 0, size: [2.2, 32] })
+      props.push({ kind: 'tram', at: [-4, -20], rotY: 0, open: true, size: [0, 30] })
+      markings.push(...zebra('z', -2.5, [0, HALF]))
+      peds.push({ from: [-0.6, -2.5], to: [HALF + 1, -2.5], state: 'crossing', rotY: -Math.PI / 2 })
+      peds.push({ from: [-1.2, -9], to: [-1.2, -9], state: 'waiting', rotY: -Math.PI / 2 })
+      peds.push({ from: [-1.4, -15], to: [-1.4, -15], state: 'waiting', rotY: -Math.PI / 2 })
+      posts.push({ codes: signs.mine, x: -0.5, z: -5.5, rotY: 0, size: 0.9 })
+      stopZ = 12
+    }
+  }
+  if (t?.kind === 'bus') {
+    const busZ = -12
+    if (t.state === 'departing') {
+      props.push({ kind: 'bus', at: [HALF + 1.4, busZ], rotY: 0, blink: 'left', move: { to: [own + 0.1, busZ - 26], when: 'after', speed: 2.2, delay: 0.6 } })
+      stopZ = 14
+    } else {
+      props.push({ kind: 'bus', at: [HALF + 1.4, busZ], rotY: 0, open: true })
+      // A busz elől kilépő gyalogos (a busz eleje z = −18-nál)
+      // A busz bal széle mellett, épp kilép az úttestre: félig takarja a busz
+      peds.push({ from: [HALF - 0.05, busZ - 6.6], to: [HALF - 0.05, busZ - 6.6], state: 'waiting', rotY: Math.PI / 2 })
+      stopZ = 10
+    }
+    posts.push({ codes: signs.mine, x: HALF + 3.4, z: -1.8, rotY: 0, size: 0.9 })
+  }
+
+  for (const code of signs.approach) posts.push({ codes: [code], x: rightEdge + 1.2, z: 38, rotY: 0, size: 1.0 })
+
+  const offset = SIDEWALK + 3.5
+  return {
+    kind: 'road',
+    asphalt,
+    sidewalks,
+    markings,
+    signs: posts.filter((p) => p.codes.length),
+    lights: [],
+    cars,
+    peds,
+    props,
+    mirror,
+    siren,
+    buildings: buildingsAlong(rng, [
+      { axis: 'z', from: L, to: -L, offset: rightEdge + (bay ? 3 : 0) + offset },
+      { axis: 'z', from: L, to: -L, offset: leftEdge - offset },
+    ]),
+    camera: { x: camX, y: 1.25, startZ: 62, stopZ },
+    lookYaw: 0,
+    turn: 'straight',
+  }
+}
+
 /** Vízszintes irány (radián) a kamerából egy ponthoz; 0 = előre (−Z), + = balra */
 export function bearingFromCamera(l: Pick<Layout3D, 'camera'>, x: number, z: number): number {
   return Math.atan2(-(x - l.camera.x), -(z - l.camera.stopZ))
@@ -420,6 +743,16 @@ function frameYaw(l: Layout3D): number {
   }
   for (const p of l.peds) points.push([(p.from[0] + p.to[0]) / 2, (p.from[1] + p.to[1]) / 2])
   if (l.blocker) points.push([l.blocker.x, l.blocker.z])
+  // Az álló, illetve a közeledés végére megálló tárgyak (a hátulról érkező mentőautó nem: azt a tükör mutatja)
+  for (const p of l.props ?? []) {
+    // A közeledő vonat felé is odanéz (a kérdés tipikusan 2,5 s után jelenik meg)
+    if (p.kind === 'train') points.push(propPose(p, 1, 2.5, 0))
+    if (p.kind === 'tram_track' || p.kind === 'island' || p.kind === 'ambulance' || p.kind === 'cone' || p.kind === 'train') continue
+    if (!p.move || p.move.when === 'approach') {
+      const [x, z] = propPose(p, 1, 0, 0)
+      if (z < l.camera.stopZ) points.push([x, z])
+    }
+  }
   const turnYaw = l.turn === 'left' ? 0.2 : l.turn === 'right' ? -0.2 : 0
   if (points.length === 0) return turnYaw
   const angles = points.map(([x, z]) => bearingFromCamera(l, x, z))
@@ -430,7 +763,8 @@ function frameYaw(l: Layout3D): number {
 
 export function buildLayout(scene: Scene): Layout3D {
   const raw = buildRaw(scene)
-  return { ...raw, lookYaw: frameYaw(raw) }
+  // Íven haladva a fejfordítást a körforgalom elrendezése adja meg
+  return raw.camera.arc ? raw : { ...raw, lookYaw: frameYaw(raw) }
 }
 
 /** Közeledés: lassuló mozgás (ease-out), 0..1 */

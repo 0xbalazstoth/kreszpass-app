@@ -3,12 +3,15 @@ import { Suspense, useEffect, useMemo, useRef, type Ref } from 'react'
 import { CanvasTexture, RepeatWrapping, SRGBColorSpace, TextureLoader, type Group, type Mesh, type MeshBasicMaterial, type Texture } from 'three'
 import { signUrl } from '../../data/signs'
 import type { LightState } from '../../domain/questions'
+import { PED_LOOKS } from './looks'
 import { carPose, easeOut, type Building, type Car3D, type Layout3D, type Light3D, type Ped3D, type Rail3D, type Rect, type SignPost3D } from './layout'
 
 /** A közeledés 0..1 állása és az eltelt idő a kérdés megjelenése óta */
 export interface Clock {
   progress(): number
   sinceStop(): number
+  /** A jelenet kezdete óta eltelt idő (s) */
+  elapsed(): number
 }
 
 const ASPHALT = '#4b5563'
@@ -20,7 +23,8 @@ const WHITE = '#f3f4f6'
 
 function Flat({ r, y, color }: { r: Rect; y: number; color: string }) {
   return (
-    <mesh position={[r.x, y, r.z]} rotation={[-Math.PI / 2, 0, 0]}>
+    // A fektetett sík Z körüli forgatása a világ Y körüli forgatásának felel meg
+    <mesh position={[r.x, y, r.z]} rotation={[-Math.PI / 2, 0, r.rotY ?? 0]}>
       <planeGeometry args={[r.w, r.d]} />
       <meshStandardMaterial color={color} />
     </mesh>
@@ -60,7 +64,7 @@ export function Ground({ layout }: { layout: Layout3D }) {
         </mesh>
       ))}
       {layout.markings.map((r, i) => (
-        <mesh key={`m${i}`} position={[r.x, 0.012, r.z]} rotation={[-Math.PI / 2, 0, 0]}>
+        <mesh key={`m${i}`} position={[r.x, 0.012, r.z]} rotation={[-Math.PI / 2, 0, r.rotY ?? 0]}>
           <planeGeometry args={[r.w, r.d]} />
           <meshBasicMaterial color={WHITE} />
         </mesh>
@@ -349,7 +353,7 @@ export function TrafficLight({ light }: { light: Light3D }) {
 
 // ---------------------------------------------------------------- járművek, gyalogosok
 
-function CarModel({ color, blink }: { color: string; blink?: 'left' | 'right' }) {
+export function CarModel({ color, blink }: { color: string; blink?: 'left' | 'right' }) {
   const left = useRef<Mesh>(null)
   const right = useRef<Mesh>(null)
   useFrame(({ clock }) => {
@@ -414,7 +418,7 @@ export function PartnerCar({ car, clock, blink }: { car: Car3D; clock: Clock; bl
   )
 }
 
-const VAN_BODY = '#f3f4f6'
+const VAN_BODY_COLOR = '#f3f4f6'
 const VAN_GLASS = '#1e293b'
 const VAN_TRIM = '#1f2937'
 
@@ -423,35 +427,75 @@ const VAN_TRIM = '#1f2937'
  * A vezető hátulról látja: hátsó ajtók, ablakok, lámpák, rendszám, villogó vészjelző. Egyszerű dobozként
  * hátulról egyetlen üres szürke téglalapnak látszott.
  */
-export function Van({ x, z }: { x: number; z: number }) {
+export function Van({ x, z, ambulance }: { x: number; z: number; ambulance?: boolean }) {
   const hazards = useRef<Group>(null)
+  const blueL = useRef<MeshBasicMaterial>(null)
+  const blueR = useRef<MeshBasicMaterial>(null)
   useFrame(({ clock }) => {
-    // Álló jármű: mindkét irányjelző egyszerre villog
-    if (hazards.current) hazards.current.visible = Math.floor(clock.elapsedTime * 2.5) % 2 === 0
+    // Álló jármű: mindkét irányjelző egyszerre villog; mentőautón nem, ott a kék fény villog váltakozva
+    if (hazards.current) hazards.current.visible = !ambulance && Math.floor(clock.elapsedTime * 2.5) % 2 === 0
+    const alt = Math.floor(clock.elapsedTime * 6) % 2 === 0
+    blueL.current?.color.set(alt ? '#3b82f6' : '#0b1a3a')
+    blueR.current?.color.set(alt ? '#0b1a3a' : '#3b82f6')
   })
   const rearZ = 2.8
+  const body = ambulance ? '#fafafa' : VAN_BODY_COLOR
   return (
     <group position={[x, 0, z]}>
       {/* Raktér és vezetőfülke, alul sötét alváz */}
       <mesh position={[0, 1.5, 0.8]}>
         <boxGeometry args={[2.0, 2.1, 4.0]} />
-        <meshStandardMaterial color={VAN_BODY} roughness={0.5} metalness={0.2} />
+        <meshStandardMaterial color={body} roughness={0.5} metalness={0.2} />
       </mesh>
       <mesh position={[0, 1.22, -2.0]}>
         <boxGeometry args={[1.94, 1.55, 1.6]} />
-        <meshStandardMaterial color={VAN_BODY} roughness={0.5} metalness={0.2} />
+        <meshStandardMaterial color={body} roughness={0.5} metalness={0.2} />
       </mesh>
       <mesh position={[0, 0.3, 0]}>
         <boxGeometry args={[1.9, 0.3, 5.5]} />
         <meshStandardMaterial color={VAN_TRIM} />
       </mesh>
-      {/* Kék csík az oldalakon */}
+      {/* Csík az oldalakon: furgonon kék, mentőautón sárga-piros */}
       {[-1, 1].map((s) => (
         <mesh key={`stripe${s}`} position={[s * 1.005, 1.25, 0.8]}>
           <boxGeometry args={[0.01, 0.28, 4.0]} />
-          <meshStandardMaterial color="#1d4ed8" />
+          <meshStandardMaterial color={ambulance ? '#facc15' : '#1d4ed8'} />
         </mesh>
       ))}
+      {ambulance && (
+        <group>
+          {[-1, 1].map((s) => (
+            <mesh key={`red${s}`} position={[s * 1.006, 0.95, 0.8]}>
+              <boxGeometry args={[0.01, 0.16, 4.0]} />
+              <meshStandardMaterial color="#dc2626" />
+            </mesh>
+          ))}
+          {/* Sárga-piros csík a homlokfalon, kék fényhíd a fülke tetején */}
+          <mesh position={[0, 0.98, -2.81]}>
+            <boxGeometry args={[1.9, 0.16, 0.02]} />
+            <meshStandardMaterial color="#facc15" />
+          </mesh>
+          <mesh position={[0, 2.0, -2.05]}>
+            <boxGeometry args={[1.5, 0.14, 0.35]} />
+            <meshStandardMaterial color="#1f2937" />
+          </mesh>
+          <mesh position={[-0.45, 2.12, -2.05]}>
+            <boxGeometry args={[0.55, 0.12, 0.3]} />
+            <meshBasicMaterial ref={blueL} color="#3b82f6" toneMapped={false} />
+          </mesh>
+          <mesh position={[0.45, 2.12, -2.05]}>
+            <boxGeometry args={[0.55, 0.12, 0.3]} />
+            <meshBasicMaterial ref={blueR} color="#0b1a3a" toneMapped={false} />
+          </mesh>
+          {/* Kék villogók a hűtőrácson */}
+          {[-0.35, 0.35].map((px, i) => (
+            <mesh key={`grill${px}`} position={[px, 0.62, -2.815]}>
+              <boxGeometry args={[0.16, 0.08, 0.02]} />
+              <meshBasicMaterial ref={i === 0 ? blueR : undefined} color="#3b82f6" toneMapped={false} />
+            </mesh>
+          ))}
+        </group>
+      )}
       {/* Fülke: szélvédő, oldalablakok, tükrök, fényszórók */}
       <mesh position={[0, 1.62, -2.805]}>
         <boxGeometry args={[1.75, 0.62, 0.02]} />
@@ -533,19 +577,12 @@ export function Van({ x, z }: { x: number; z: number }) {
   )
 }
 
-/** Gyalogosok megjelenése: felső ruha, nadrág, haj, bőrszín (sorszám szerint váltakozik) */
-const PED_LOOKS = [
-  { top: '#2563eb', legs: '#1f2937', hair: '#3b2a1e', skin: '#f1c7a4', shoes: '#111827' },
-  { top: '#db2777', legs: '#334155', hair: '#a16207', skin: '#e8b48f', shoes: '#f5f5f4' },
-  { top: '#059669', legs: '#44403c', hair: '#18181b', skin: '#c68a64', shoes: '#292524' },
-  { top: '#ea580c', legs: '#1e3a8a', hair: '#57534e', skin: '#f3d2b5', shoes: '#111827' },
-]
 
 /**
  * Egyszerű, de emberi arányú gyalogos (kb. 1,72 m): fej hajjal, nyak, törzs, csípő, karok kézzel, lábak cipővel.
  * A modell a −Z felé néz (mint az autók); járás közben a karok és lábak ellentétesen lengenek.
  */
-function HumanFigure({ look, limbs }: { look: (typeof PED_LOOKS)[number]; limbs: { legL: Ref<Group>; legR: Ref<Group>; armL: Ref<Group>; armR: Ref<Group> } }) {
+export function HumanFigure({ look, limbs }: { look: (typeof PED_LOOKS)[number]; limbs: { legL: Ref<Group>; legR: Ref<Group>; armL: Ref<Group>; armR: Ref<Group> } }) {
   const leg = (x: number, ref: Ref<Group>) => (
     // Csípőből forgó láb: comb-lábszár egyben, alul cipő
     <group ref={ref} position={[x, 0.9, 0]}>
@@ -649,9 +686,20 @@ export function Pedestrian({ ped, clock, index }: { ped: Ped3D; clock: Clock; in
 // ---------------------------------------------------------------- saját autó és kamera
 
 export function DriverCamera({ layout, clock }: { layout: Layout3D; clock: Clock }) {
-  const { x, y, startZ, stopZ } = layout.camera
+  const { x, y, startZ, stopZ, arc } = layout.camera
   useFrame(({ camera }) => {
     const t = clock.progress()
+    const yawNow = layout.lookYaw * easeOut(clock.sinceStop() / 0.9)
+    if (arc) {
+      // Körpályán: az óramutatóval ellentétesen haladva a menetirány a növekvő szög érintője
+      const a = arc.a0 + (arc.a1 - arc.a0) * easeOut(t)
+      const px = arc.r * Math.cos(a)
+      const pz = -arc.r * Math.sin(a)
+      camera.position.set(px, y, pz)
+      const h = a + yawNow
+      camera.lookAt(px - Math.sin(h) * 30, 1.05, pz - Math.cos(h) * 30)
+      return
+    }
     const z = startZ + (stopZ - startZ) * easeOut(t)
     camera.position.set(x, y, z)
     // Megállás után a vezető a partner (vagy a kanyarodás) irányába fordítja a fejét

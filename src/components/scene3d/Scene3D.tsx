@@ -3,6 +3,8 @@ import { useMemo, useState } from 'react'
 import type { Scene } from '../../domain/questions'
 import { buildLayout } from './layout'
 import { Buildings, DriverCamera, Ground, PartnerCar, Pedestrian, RailBarrier, RailLights, RailTrack, SignPost, TrafficLight, Van, type Clock } from './parts'
+import { Props, RearMirror } from './props'
+import { useSiren } from './siren'
 
 interface Props {
   scene: Scene
@@ -29,10 +31,13 @@ export default function Scene3D({ scene, animate, approachMs }: Props) {
     () => ({
       progress: () => Math.min(1, (performance.now() - startedAt) / approachMs),
       sinceStop: () => Math.max(0, (performance.now() - startedAt - approachMs) / 1000),
+      elapsed: () => (performance.now() - startedAt) / 1000,
     }),
     [approachMs, startedAt],
   )
-  const hud = TURN_HUD[scene.turn]
+  const ring = scene.roundabout
+  const hud = ring ? { arrow: '↻', text: `${ring.exit}. kijárat` } : TURN_HUD[scene.turn]
+  useSiren(!!layout.siren)
 
   return (
     <div className="scene3d">
@@ -69,7 +74,9 @@ export default function Scene3D({ scene, animate, approachMs }: Props) {
           <Pedestrian key={i} ped={p} clock={clock} index={i} />
         ))}
         {layout.blocker && <Van x={layout.blocker.x} z={layout.blocker.z} />}
+        {layout.props && <Props list={layout.props} clock={clock} />}
         <DriverCamera layout={layout} clock={clock} />
+        {layout.mirror && <RearMirror />}
       </Canvas>
       {/* A saját autó a vezetőülésből: motorháztető és műszerfal */}
       <svg className="cockpit" viewBox="0 0 1000 160" preserveAspectRatio="none" aria-hidden>
@@ -82,7 +89,8 @@ export default function Scene3D({ scene, animate, approachMs }: Props) {
         <path d="M180 160 L330 38 Q500 22 670 38 L820 160 Z" fill="url(#hood)" />
         <path d="M0 160 L0 118 Q500 78 1000 118 L1000 160 Z" fill="#161a21" />
       </svg>
-      <div className={`hud ${scene.turn !== 'straight' ? 'turning' : ''}`} aria-hidden>
+      {layout.mirror && <div className="rear-mirror" aria-label="Visszapillantó tükör" />}
+      <div className={`hud ${scene.turn !== 'straight' || ring ? 'turning' : ''}`} aria-hidden>
         <span className="hud-arrow">{hud.arrow}</span>
         {hud.text}
       </div>

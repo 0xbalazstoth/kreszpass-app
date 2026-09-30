@@ -12,10 +12,11 @@ import type { OsmData, OsmNode, OsmWay, Tags } from './osm.ts'
 
 export const TILE_ZOOM = 13
 // 2: vasúti átjárók, táblapontok (traffic_sign), egyirányú utak
-export const TILE_FORMAT_VERSION = 2
+// 3: forgalmi sávok száma (lanes), villamos- és autóbuszmegállók
+export const TILE_FORMAT_VERSION = 3
 
 /** Utak címkéi, amelyeket a helyzetfelismerés használ */
-export const WAY_TAG_KEYS = ['highway', 'name', 'ref', 'maxspeed', 'maxspeed:forward', 'junction', 'priority_road', 'oneway'] as const
+export const WAY_TAG_KEYS = ['highway', 'name', 'ref', 'maxspeed', 'maxspeed:forward', 'junction', 'priority_road', 'oneway', 'lanes'] as const
 /** Tábla/lámpa/zebra/vasúti átjáró pontok címkéi */
 export const NODE_TAG_KEYS = [
   'highway',
@@ -28,14 +29,34 @@ export const NODE_TAG_KEYS = [
   'traffic_sign:direction',
   'direction',
   'maxspeed',
+  'public_transport',
+  'bus',
+  'tram',
 ] as const
 /** Ezeket a pontokat tartjuk meg (a helyzetfelismerés ezekből dolgozik) */
 export const CONTROL_HIGHWAYS = new Set(['stop', 'give_way', 'traffic_signals', 'crossing', 'mini_roundabout'])
 
-/** Megtartandó pont-e: tábla, lámpa, zebra, vasúti átjáró vagy kitáblázott jelzőtábla */
+/** Megtartandó pont-e: tábla, lámpa, zebra, vasúti átjáró, kitáblázott jelzőtábla, villamos- vagy autóbuszmegálló */
 export function isControlNode(tags: Tags | undefined | null): boolean {
   if (!tags) return false
-  return CONTROL_HIGHWAYS.has(tags.highway ?? '') || tags.railway === 'level_crossing' || Boolean(tags.traffic_sign)
+  return (
+    CONTROL_HIGHWAYS.has(tags.highway ?? '') ||
+    tags.railway === 'level_crossing' ||
+    Boolean(tags.traffic_sign) ||
+    isTransitStop(tags) !== null
+  )
+}
+
+/** Villamos- vagy autóbuszmegálló pont-e (a peron vagy a megállási pont) */
+export function isTransitStop(tags: Tags | undefined | null): 'tram' | 'bus' | null {
+  if (!tags) return null
+  if (tags.railway === 'tram_stop') return 'tram'
+  if (tags.highway === 'bus_stop') return 'bus'
+  if (tags.public_transport === 'stop_position') {
+    if (tags.tram === 'yes') return 'tram'
+    if (tags.bus === 'yes') return 'bus'
+  }
+  return null
 }
 
 /**

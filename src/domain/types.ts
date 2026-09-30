@@ -31,6 +31,10 @@ export type SituationKind =
   | 'crossing'
   | 'speed_change'
   | 'rail_crossing'
+  | 'tram_stop'
+  | 'bus_stop'
+  /** Váratlan helyzet (akadály, mentő stb.): nem térképadatból, hanem a vezetés elején generálva */
+  | 'hazard'
 
 export type Turn = 'straight' | 'left' | 'right'
 
@@ -50,7 +54,8 @@ export interface Situation {
   speedTo?: number
   /** A generátor bizonytalan, kézzel ellenőrizni kell */
   needsReview: boolean
-  source: 'osm' | 'mapillary' | 'manual'
+  /** generated: a vezetés elején véletlenszerűen elhelyezett váratlan helyzet, nincs eltárolva */
+  source: 'osm' | 'mapillary' | 'manual' | 'generated'
   note?: string
   /**
    * A helyszínen ténylegesen álló (az OpenStreetMap-adatokból levezetett vagy ott kitáblázott) táblák kódjai,
@@ -59,7 +64,24 @@ export interface Situation {
   signs?: string[]
   /** Vasúti átjárónál: van-e sorompó, illetve fénysorompó */
   rail?: { barrier: boolean; lights: boolean }
+  /**
+   * Körforgalomnál a valós adatokból: hányadik kijáraton hajtunk ki, hány kijárata van,
+   * hány forgalmi sávos a körpálya, és a kihajtás iránya a behajtáshoz képest
+   */
+  roundabout?: RoundaboutInfo
+  /** Villamos- vagy autóbuszmegállónál: a megálló fajtája, és (villamosnál) van-e járdasziget; ismeretlen = undefined */
+  transit?: { kind: 'tram' | 'bus'; island?: boolean }
 }
+
+export interface RoundaboutInfo {
+  exit: number
+  exits: number
+  lanes: number
+  turn: Turn
+}
+
+/** Ennyire sűrűn kerülnek váratlan helyzetek az útvonalra */
+export type HazardDensity = 'off' | 'few' | 'many'
 
 /** tour: a teljes útvonal végigvezetése a vizsgabiztos hangos utasításaival */
 export type Mode = 'practice' | 'exam' | 'review' | 'tour'
@@ -139,6 +161,8 @@ export interface Settings {
   examinerVoice: boolean
   /** Teljes útvonalon a haladási sebesség (km/h) */
   tourSpeedKmh: number
+  /** Váratlan helyzetek (akadály, labda, mentő…) az útvonal egyenes szakaszain */
+  hazards: HazardDensity
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -155,4 +179,5 @@ export const DEFAULT_SETTINGS: Settings = {
   actionDrill: false,
   examinerVoice: true,
   tourSpeedKmh: 40,
+  hazards: 'few',
 }

@@ -12,7 +12,7 @@ import { normalizeStreetName } from '../../data/streetRoute'
 import { cleanRows, routeFromStreets } from '../../data/streetRouteSource'
 import { generateSituations, placeOnRoute } from '../../data/situations'
 import { allPromptVariants, KIND_LABEL, TURN_LABEL } from '../../domain/questions'
-import type { Route, Situation, SituationKind, Turn } from '../../domain/types'
+import type { RoundaboutInfo, Route, Situation, SituationKind, Turn } from '../../domain/types'
 import { db, getSettings, replaceSituations, situationsOf } from '../../db'
 import { formatDistance } from '../../lib/format'
 import { RouteGeom, type LngLat } from '../../lib/geo'
@@ -26,6 +26,14 @@ type Mode = 'select' | 'waypoints' | 'situation'
 
 interface Props {
   routeId: string
+}
+
+/** Csak kereszteződésnél van értelme a kanyarodási iránynak */
+const TURN_KINDS = new Set<SituationKind>(['stop', 'give_way', 'priority', 'equal', 'signals'])
+
+/** A körforgalom adatai; kézzel felvettnél egy négyágú kör 2. kijárata */
+function ringInfo(s: Situation): RoundaboutInfo {
+  return s.roundabout ?? { exit: 2, exits: 4, lanes: 1, turn: 'straight' }
 }
 
 export function RouteEditor({ routeId: param }: Props) {
@@ -515,7 +523,7 @@ export function RouteEditor({ routeId: param }: Props) {
                           </option>
                         ))}
                       </select>
-                      {s.kind !== 'speed_change' && s.kind !== 'crossing' && s.kind !== 'roundabout' && (
+                      {TURN_KINDS.has(s.kind) && (
                         <select value={s.turn} onChange={(e) => update(s, { turn: e.target.value as Turn })} aria-label="Irány">
                           {(['straight', 'left', 'right'] as Turn[]).map((t) => (
                             <option key={t} value={t}>
@@ -536,6 +544,53 @@ export function RouteEditor({ routeId: param }: Props) {
                           />{' '}
                           km/h
                         </label>
+                      )}
+                      {s.kind === 'roundabout' && (
+                        <span className="ring-fields" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="number"
+                            min={1}
+                            max={8}
+                            value={ringInfo(s).exit}
+                            onChange={(e) => update(s, { roundabout: { ...ringInfo(s), exit: Math.max(1, Number(e.target.value) || 1) } })}
+                            aria-label="Hányadik kijárat"
+                          />
+                          . kijárat a
+                          <input
+                            type="number"
+                            min={2}
+                            max={8}
+                            value={ringInfo(s).exits}
+                            onChange={(e) => update(s, { roundabout: { ...ringInfo(s), exits: Math.max(2, Number(e.target.value) || 2) } })}
+                            aria-label="Kijáratok száma"
+                          />
+                          -ből
+                          <select
+                            value={ringInfo(s).lanes}
+                            onChange={(e) => update(s, { roundabout: { ...ringInfo(s), lanes: Number(e.target.value) } })}
+                            aria-label="Körpálya sávjai"
+                          >
+                            <option value={1}>egysávos</option>
+                            <option value={2}>kétsávos</option>
+                          </select>
+                        </span>
+                      )}
+                      {s.kind === 'tram_stop' && (
+                        <select
+                          value={s.transit?.island === undefined ? '' : s.transit.island ? 'yes' : 'no'}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) =>
+                            update(s, {
+                              transit: { kind: 'tram', island: e.target.value === '' ? undefined : e.target.value === 'yes' },
+                              needsReview: e.target.value === '' ? s.needsReview : false,
+                            })
+                          }
+                          aria-label="Járdasziget"
+                        >
+                          <option value="">járdasziget: nem tudom</option>
+                          <option value="yes">van járdasziget</option>
+                          <option value="no">nincs járdasziget</option>
+                        </select>
                       )}
                       {s.needsReview && (
                         <button className="btn small" onClick={(e) => (e.stopPropagation(), update(s, { needsReview: false }))}>

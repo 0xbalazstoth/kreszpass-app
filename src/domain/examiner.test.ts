@@ -23,4 +23,15 @@ describe('vizsgabiztos utasításai', () => {
     expect(examinerLine({ kind: 'crossing', turn: 'straight' }, true)).toBe('Kérem, induljon el, ha biztonságos.')
     expect(examinerLine({ kind: 'roundabout', turn: 'straight' }, true)).toBe('Kérem, induljon el, ha biztonságos. A következő körforgalomba hajtson be.')
   })
+
+  it('ismert kijáratnál megmondja, hányadikon kell kihajtani', () => {
+    expect(examinerLine({ kind: 'roundabout', turn: 'straight', roundabout: { exit: 2, exits: 4, lanes: 1, turn: 'straight' } })).toBe(
+      'A körforgalomban a második kijáraton hajtson ki.',
+    )
+    expect(examinerLine({ kind: 'roundabout', turn: 'straight', roundabout: { exit: 7, exits: 8, lanes: 1, turn: 'left' } })).toMatch(/a 7\. kijáraton/)
+  })
+
+  it('megállónál, váratlan helyzetnél nem szól', () => {
+    for (const kind of ['tram_stop', 'bus_stop', 'hazard'] as const) expect(examinerLine({ kind, turn: 'straight' })).toBeNull()
+  })
 })

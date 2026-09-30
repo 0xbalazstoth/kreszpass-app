@@ -67,6 +67,10 @@ export function signCodeFor(type: SignType, speed?: number): string {
     case 'rail':
       // Andráskereszt a vasúti átjárónál
       return 'A-041'
+    case 'tram':
+      return 'E-041'
+    case 'bus':
+      return 'E-039'
   }
 }
 
@@ -86,9 +90,22 @@ export function signsForScene(scene: Scene): SceneSigns & { target: string[] } {
   const main = scene.mySign ? [signCodeFor(scene.mySign, scene.speed)] : []
   // A helyszínen valóban álló további táblák (OSM), a fő tábla alatt; legfeljebb kettő, hogy olvasható maradjon
   const extra = (scene.extraSigns ?? []).filter((c) => !main.includes(c) && SIGN_BY_CODE.has(c))
-  const approach = scene.mySign === 'roundabout' ? ['A-056'] : scene.rail ? [scene.rail.barrier ? 'A-038' : 'A-039', 'A-045'] : []
+  // Körforgalom bejáratánál az elsőbbségadás mellett a „Körforgalom” utasító tábla is áll
+  if (scene.mySign === 'roundabout') main.push('D-017')
+  // Úton folyó munkák: a munkaterület elején a „Kikerülési irány: balra” tábla
+  if (scene.hazard === 'roadworks') main.push('D-015')
+  const approach =
+    scene.mySign === 'roundabout'
+      ? ['A-056']
+      : scene.rail
+        ? [scene.rail.barrier ? 'A-038' : 'A-039', 'A-045']
+        : scene.transit?.kind === 'tram' && !scene.transit.island
+          ? ['A-053+H-023']
+          : scene.hazard === 'roadworks'
+            ? ['A-025']
+            : []
   return {
-    mine: [...main, ...extra.filter((c) => !TARGET_ROAD_SIGNS.has(c) && !approach.includes(c)).slice(0, 2)],
+    mine: [...main, ...extra.filter((c) => !TARGET_ROAD_SIGNS.has(c) && !approach.includes(c) && !main.includes(c)).slice(0, 2)],
     cross: scene.crossSign ? [signCodeFor(scene.crossSign)] : [],
     approach,
     target: scene.turn !== 'straight' ? extra.filter((c) => TARGET_ROAD_SIGNS.has(c)) : [],
@@ -137,6 +154,9 @@ export function signForSituation(s: Pick<Situation, 'kind' | 'speedTo'>): string
     crossing: 'E-038',
     speed_change: s.speedTo ? speedSignCode(s.speedTo) : 'C-043',
     rail_crossing: 'A-041',
+    tram_stop: 'E-041',
+    bus_stop: 'E-039',
+    hazard: 'A-053',
   }
   return byKind[s.kind]
 }

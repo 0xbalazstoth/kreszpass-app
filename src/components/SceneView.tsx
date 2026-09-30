@@ -156,24 +156,144 @@ function RoadScene({ scene }: { scene: Scene }) {
         </g>
       )}
       {ped && <Pedestrian x={ped.state === 'crossing' ? 160 : 198} y={131} />}
+      {scene.rail?.queue && [95, 55, 15].map((y) => <Car key={y} x={167} y={y} rot={0} color="#9ca3af" />)}
+      {scene.rail?.train && (
+        <g aria-label="közeledő vonat">
+          <rect x="-10" y="116" width="90" height="18" rx="4" fill="#1e3a8a" />
+          <rect x="72" y="119" width="6" height="12" fill="#fffbe6" />
+        </g>
+      )}
+      {scene.rail?.slowAhead && <rect x="157" y="160" width="20" height="30" rx="4" fill="#15803d" stroke="#111827" aria-label="lassú mezőgazdasági jármű" />}
+      {scene.hazard && <HazardShapes scene={scene} />}
+      {scene.transit && <TransitShapes scene={scene} />}
     </>
+  )
+}
+
+/** Váratlan helyzetek vázlata: akadály, útépítés, labda, ajtó, kerékpáros, mentőautó */
+function HazardShapes({ scene }: { scene: Scene }) {
+  switch (scene.hazard) {
+    case 'parked_oncoming':
+    case 'parked_clear':
+      return (
+        <g aria-label="álló jármű a sávunkban">
+          <rect x="156" y="110" width="24" height="56" rx="4" fill="#e5e7eb" stroke="#111827" strokeWidth="1.5" />
+          <circle cx="160" cy="163" r="3" fill="#f59e0b" />
+          <circle cx="176" cy="163" r="3" fill="#f59e0b" />
+          {scene.hazard === 'parked_oncoming' && <Car x={133} y={70} rot={180} color="#dc2626" label="szembejövő autó" />}
+        </g>
+      )
+    case 'roadworks':
+      return (
+        <g aria-label="úton folyó munkák">
+          {[0, 1, 2, 3, 4].map((i) => (
+            <circle key={i} cx={182 - i * 7} cy={175 - i * 8} r="3.5" fill="#f97316" />
+          ))}
+          <rect x="153" y="60" width="30" height="80" fill="#7c6247" opacity=".8" />
+          <rect x="153" y="136" width="30" height="6" fill="#dc2626" />
+        </g>
+      )
+    case 'ball_child':
+      return (
+        <g aria-label="labda gurul az úttestre">
+          <rect x="185" y="0" width="26" height="300" fill={ROAD} />
+          {[40, 90, 170, 220].map((y) => (
+            <Car key={y} x={198} y={y} rot={0} color="#9ca3af" />
+          ))}
+          <circle cx="172" cy="130" r="5" fill="#ef4444" stroke="#111827" />
+          <circle cx="206" cy="130" r="6" fill="#f59e0b" stroke="#111827" />
+        </g>
+      )
+    case 'door_open':
+      return (
+        <g aria-label="kinyíló ajtó">
+          <rect x="185" y="0" width="26" height="300" fill={ROAD} />
+          <Car x={198} y={120} rot={0} color="#9ca3af" />
+          <path d="M188 112 L176 124" stroke="#111827" strokeWidth="4" />
+        </g>
+      )
+    case 'cyclist':
+      return (
+        <g aria-label="kerékpáros előttünk">
+          <rect x="175" y="120" width="7" height="22" rx="3" fill="#0e7490" />
+          <Car x={133} y={60} rot={180} color="#dc2626" />
+          <Car x={133} y={140} rot={180} color="#f59e0b" />
+        </g>
+      )
+    case 'emergency':
+      return (
+        <g aria-label="mentőautó mögöttünk">
+          <rect x="157" y="262" width="20" height="36" rx="4" fill="#fafafa" stroke="#111827" strokeWidth="1.5" />
+          <rect x="159" y="266" width="7" height="4" fill="#3b82f6" className="blink" />
+          <rect x="168" y="266" width="7" height="4" fill="#3b82f6" />
+        </g>
+      )
+    default:
+      return null
+  }
+}
+
+/** Villamos- és autóbuszmegálló vázlata */
+function TransitShapes({ scene }: { scene: Scene }) {
+  const t = scene.transit!
+  if (t.kind === 'bus')
+    return (
+      <g aria-label="autóbusz a megállóban">
+        <rect x="185" y="90" width="22" height="90" fill={ROAD} />
+        <rect x="186" y="100" width="20" height="72" rx="4" fill="#1d4ed8" stroke="#111827" strokeWidth="1.5" />
+        {t.state === 'departing' && <circle cx="189" cy="104" r="3.5" fill="#f59e0b" className="blink" />}
+        {t.state === 'standing' && <Pedestrian x={180} y={94} />}
+      </g>
+    )
+  if (t.island)
+    return (
+      <g aria-label="villamos járdaszigetes megállóban">
+        <rect x="80" y="0" width="35" height="300" fill={ROAD} />
+        <rect x="118" y="60" width="12" height="110" fill="#b8bec7" stroke="#6b7280" />
+        <rect x="88" y="50" width="22" height="130" rx="4" fill="#f5c400" stroke="#111827" strokeWidth="1.5" />
+        <Zebra x={130} y={172} w={55} h={12} vertical={false} />
+        <Pedestrian x={150} y={178} />
+      </g>
+    )
+  return (
+    <g aria-label="villamos a sávunkban">
+      <path d="M160 0V300M174 0V300" stroke="#9ca3af" strokeWidth="2" />
+      <rect x="155" y={t.state === 'arriving' ? 40 : 20} width="24" height="130" rx="4" fill="#f5c400" stroke="#111827" strokeWidth="1.5" />
+      {t.state === 'doors_open' && [50, 90, 130].map((y) => <Pedestrian key={y} x={184} y={y} />)}
+    </g>
   )
 }
 
 function RoundaboutScene({ scene }: { scene: Scene }) {
   const signs = signsForScene(scene)
+  const info = scene.roundabout ?? { exits: 4, exit: 2, lanes: 1, phase: 'entry' as const }
+  const n = Math.max(3, Math.min(6, info.exits))
+  // Ágak a valós kijáratszámmal; a behajtás alul (délen), a kör az óramutatóval ellentétesen halad
+  const armA = (k: number) => -Math.PI / 2 + (k * 2 * Math.PI) / n
+  const pt = (a: number, r: number) => [150 + r * Math.cos(a), 150 - r * Math.sin(a)] as const
+  const exitK = Math.min(info.exit, n)
+  const exitA = armA(exitK)
+  const [ex, ey] = pt(exitA, 150)
+  const [lx, ly] = pt(exitA, 118)
+  const inR = 66
+  const [sx, sy] = pt(armA(0) + 0.25, inR)
+  const [tx, ty] = pt(exitA - 0.25, inR)
+  const large = exitA - armA(0) > Math.PI ? 1 : 0
   const exitPed = scene.pedestrian?.where === 'exit_crossing'
+  const [zx, zy] = pt(exitA, 104)
   return (
     <>
-      <rect x="115" y="0" width="70" height="300" fill={ROAD} />
-      <rect x="0" y="115" width="300" height="70" fill={ROAD} />
+      {Array.from({ length: n }, (_, k) => {
+        const [x, y] = pt(armA(k), 160)
+        return <path key={k} d={`M150 150L${x} ${y}`} stroke={ROAD} strokeWidth="70" />
+      })}
       <circle cx="150" cy="150" r="88" fill={ROAD} />
       <circle cx="150" cy="150" r="42" fill="#4ade80" stroke={MARK} strokeWidth="3" />
-      <path d="M150 0V52M150 248V300M0 150H52M248 150H300" stroke={MARK} strokeWidth="2" strokeDasharray="10 8" />
-      {exitPed && <Zebra x={117} y={20} w={66} h={18} vertical={false} />}
+      {info.lanes >= 2 && <circle cx="150" cy="150" r="65" fill="none" stroke={MARK} strokeWidth="2" strokeDasharray="8 8" />}
+      {exitPed && <circle cx={zx} cy={zy} r="10" fill="none" stroke={MARK} strokeWidth="6" strokeDasharray="3 3" />}
       <path d="M150 232H185" stroke={MARK} strokeWidth="3" strokeDasharray="6 5" />
-      {signs.mine.map((code) => (
-        <SignGlyph key={code} code={code} x={212} y={250} size={34} />
+      {signs.mine.map((code, i) => (
+        <SignGlyph key={code} code={code} x={212 + i * 30} y={250} size={28} />
       ))}
       {signs.approach.map((code) => (
         <SignGlyph key={code} code={code} x={212} y={288} size={24} />
@@ -181,8 +301,14 @@ function RoundaboutScene({ scene }: { scene: Scene }) {
       {scene.cars.map((c, i) => (
         <Car key={i} x={c.from === 'left' ? 92 : 208} y={c.from === 'left' ? 196 : 104} rot={c.from === 'left' ? 145 : -35} color="#dc2626" />
       ))}
-      {exitPed && <Pedestrian x={160} y={29} />}
-      <path d="M167 238 Q200 205 212 160 Q220 110 175 70 L167 40" stroke="#2563eb" strokeWidth="4" fill="none" strokeDasharray="8 6" markerEnd="url(#arrow)" />
+      {exitPed && <Pedestrian x={zx} y={zy} />}
+      <path d={`M167 238 L${sx} ${sy} A${inR} ${inR} 0 ${large} 0 ${tx} ${ty} L${ex} ${ey}`} stroke="#2563eb" strokeWidth="4" fill="none" strokeDasharray="8 6" markerEnd="url(#arrow)" />
+      <g aria-label={`${info.exit}. kijárat`}>
+        <circle cx={lx} cy={ly} r="11" fill="#2563eb" />
+        <text x={lx} y={ly + 4} textAnchor="middle" fontSize="12" fontWeight="700" fill="#fff">
+          {info.exit}.
+        </text>
+      </g>
     </>
   )
 }

@@ -1,6 +1,7 @@
 import type { LineString, Position } from 'geojson'
-import type { Situation, SituationKind, Turn } from '../domain/types'
+import type { RoundaboutInfo, Situation, SituationKind, Turn } from '../domain/types'
 import { angleDiff, bboxContains, bboxOf, RouteGeom, turnDelta, type BBox, type LngLat } from '../lib/geo'
+import { isTransitStop } from './osmTileFormat'
 import { parseTrafficSign } from './signs'
 import {
   highwayRank,
@@ -39,6 +40,12 @@ const RAIL_SNAP = 8
 const SIGN_SNAP = 12
 /** Jelzőtáblák ennyivel a helyzet előtt számítanak a helyzethez (m) */
 const SIGN_BEFORE = 80
+/** Villamosmegálló ennyin belül az útvonalhoz: a villamos a mi úttestünkön jár (m) */
+const TRAM_SNAP = 10
+/** Autóbuszmegálló (peron) ennyin belül, az útvonal jobb oldalán (m) */
+const BUS_SNAP = 15
+/** Ennyinél közelebbi azonos fajtájú megállók egynek számítanak (m) */
+const STOP_MERGE = 40
 
 interface PreparedWay {
   way: OsmWay
@@ -173,15 +180,88 @@ export function generateSituations(line: LineString, osm: OsmData, opts: Generat
   for (let i = 1; i < samples.length; i++) {
     if (isRoundaboutWay(samples[i].way) && !isRoundaboutWay(samples[i - 1].way)) {
       const d = samples[i].d
-      if (!roundaboutDs.some((x) => Math.abs(x - d) < 40)) roundaboutDs.push(d)
+      if (roundaboutDs.some((x) => Math.abs(x - d) < 40)) continue
+      roundaboutDs.push(d)
+      let j = i
+      while (j < samples.length && isRoundaboutWay(samples[j].way)) j++
+      const info = j < samples.length ? ringExit(samples[i].way!, samples[i - 1].p, samples[j].p, geom.bearingBetween(Math.max(0, d - 30), d), geom.bearingBetween(samples[j].d, Math.min(L, samples[j].d + 30))) : null
+      out.push(make(d, 'roundabout', info ? { roundabout: info.info, needsReview: info.unsure } : { needsReview: true }))
     }
   }
   for (const n of nodes) {
     if (n.tags?.highway !== 'mini_roundabout') continue
     const pr = geom.project([n.lon, n.lat])
-    if (pr.dist <= 8 && !roundaboutDs.some((x) => Math.abs(x - pr.d) < 40)) roundaboutDs.push(pr.d)
+    if (pr.dist > 8 || roundaboutDs.some((x) => Math.abs(x - pr.d) < 40)) continue
+    roundaboutDs.push(pr.d)
+    const info = miniExit(n, geom.pointAt(pr.d - 15), geom.pointAt(pr.d + 15), geom.bearingBetween(Math.max(0, pr.d - 30), pr.d), geom.bearingBetween(pr.d, Math.min(L, pr.d + 30)))
+    out.push(make(pr.d, 'roundabout', info ? { roundabout: info.info, needsReview: info.unsure } : { needsReview: true }))
   }
-  for (const d of roundaboutDs) out.push(make(d, 'roundabout'))
+
+  /** A körpálya (összefüggő körforgalmi utak) csomópontjai */
+  function ringOf(start: OsmWay): { ringWays: OsmWay[]; ringNodes: Set<number> } {
+    const ringWays: OsmWay[] = []
+    const ringNodes = new Set<number>()
+    const queue = [start]
+    const seenWays = new Set<number>()
+    while (queue.length) {
+      const w = queue.pop()!
+      if (seenWays.has(w.id)) continue
+      seenWays.add(w.id)
+      ringWays.push(w)
+      for (const id of w.nodes) {
+        ringNodes.add(id)
+        for (const o of nodeWays.get(id) ?? []) if (isRoundaboutWay(o) && !seenWays.has(o.id)) queue.push(o)
+      }
+    }
+    return { ringWays, ringNodes }
+  }
+
+  /** A körhöz csatlakozó ágak: hol csatlakoznak, és ki lehet-e rajtuk hajtani (nem befelé egyirányúak) */
+  function armsAt(ringNodes: Set<number>): Arm[] {
+    const arms: Arm[] = []
+    for (const id of ringNodes) {
+      const at = nodeCoord.get(id)
+      if (!at) continue
+      for (const w of nodeWays.get(id) ?? []) {
+        if (isRoundaboutWay(w)) continue
+        const idx = w.nodes.indexOf(id)
+        const ow = w.tags?.oneway
+        const forward = ow === 'yes' || ow === '1' || ow === 'true'
+        const backward = ow === '-1'
+        // Befelé egyirányú: a forgalom a körpálya felé tart (előre haladva a végpontja, visszafelé a kezdőpontja a kör)
+        const inbound = (forward && idx === w.nodes.length - 1) || (backward && idx === 0)
+        arms.push({ at, exit: !inbound })
+      }
+    }
+    return arms
+  }
+
+  function ringExit(start: OsmWay, before: LngLat, after: LngLat, bIn: number, bOut: number) {
+    const { ringWays, ringNodes } = ringOf(start)
+    const pts = [...ringNodes].map((id) => nodeCoord.get(id)).filter((p): p is LngLat => !!p)
+    if (!pts.length) return null
+    const centre: LngLat = [pts.reduce((a, p) => a + p[0], 0) / pts.length, pts.reduce((a, p) => a + p[1], 0) / pts.length]
+    const lanes = Math.max(1, ...ringWays.map((w) => Number.parseInt(w.tags?.lanes ?? '', 10)).filter(Number.isFinite))
+    return exitInfo(centre, armsAt(ringNodes), before, after, lanes, bIn, bOut)
+  }
+
+  function miniExit(node: OsmNode, before: LngLat, after: LngLat, bIn: number, bOut: number) {
+    const centre: LngLat = [node.lon, node.lat]
+    const arms: Arm[] = []
+    for (const w of nodeWays.get(node.id) ?? []) {
+      const i = w.nodes.indexOf(node.id)
+      const ow = w.tags?.oneway
+      const forward = ow === 'yes' || ow === '1' || ow === 'true'
+      for (const k of [i - 1, i + 1]) {
+        const g = w.geometry[k]
+        if (!g) continue
+        // Befelé egyirányú ág: a forgalom a csomópont felé halad
+        const inbound = forward ? k < i : ow === '-1' ? k > i : false
+        arms.push({ at: [g.lon, g.lat], exit: !inbound })
+      }
+    }
+    return exitInfo(centre, arms, before, after, 1, bIn, bOut)
+  }
 
   // ------------------------------------------------ Kereszteződések
   const candidates: { nodeId: number; d: number; coord: LngLat }[] = []
@@ -316,6 +396,29 @@ export function generateSituations(line: LineString, osm: OsmData, opts: Generat
     out.push(make(pr.d, 'rail_crossing', { rail: { barrier, lights }, needsReview: !t['crossing:barrier'] && !t['crossing:light'] }))
   }
 
+  // ------------------------------------------------ Villamos- és autóbuszmegállók
+  const stopDs: { d: number; kind: 'tram' | 'bus' }[] = []
+  for (const n of nodes) {
+    const kind = isTransitStop(n.tags)
+    if (!kind) continue
+    // Autóbusznál csak a peron (bus_stop) mondja meg, melyik oldalon áll a megálló
+    if (kind === 'bus' && n.tags?.highway !== 'bus_stop') continue
+    const p: LngLat = [n.lon, n.lat]
+    const pr = geom.project(p)
+    if (pr.d < 30 || pr.d > L - 10) continue
+    if (kind === 'tram' && pr.dist > TRAM_SNAP) continue
+    if (kind === 'bus') {
+      if (pr.dist > BUS_SNAP || sideOf(geom, pr.d, p) <= 0) continue
+      // Az elindulás elősegítése (KRESZ 24. § (3)) lakott területen kötelező
+      const v = parseMaxspeed(wayAt(pr.d)?.tags)
+      if (v !== null && v > 50) continue
+    }
+    if (stopDs.some((x) => x.kind === kind && Math.abs(x.d - pr.d) < STOP_MERGE)) continue
+    stopDs.push({ d: pr.d, kind })
+    // A járdasziget az OSM-adatokból nem állapítható meg biztosan: kézzel kell jelölni
+    out.push(make(pr.d, kind === 'tram' ? 'tram_stop' : 'bus_stop', { transit: { kind }, needsReview: kind === 'tram' }))
+  }
+
   const list = dedupe(out.sort((a, b) => a.d - b.d))
   attachRealSigns(list, nodes, geom, wayAt)
   return list
@@ -349,6 +452,48 @@ function attachRealSigns(list: Situation[], nodes: OsmNode[], geom: RouteGeom, w
     if (s.turn !== 'straight' && isOneway(wayAt(s.d + 30)) && !isRoundaboutWay(wayAt(s.d + 30))) codes.push('E-012')
     if (codes.length) s.signs = codes
   })
+}
+
+interface Arm {
+  /** Ahol az ág a körpályához csatlakozik */
+  at: LngLat
+  /** Ki lehet-e rajta hajtani */
+  exit: boolean
+}
+
+/** Szög a középponttól (radián, az óramutatóval ellentétesen növekszik, mint a körforgalomban a haladás) */
+function angleFrom(c: LngLat, p: LngLat): number {
+  const kx = Math.cos((c[1] * Math.PI) / 180)
+  return Math.atan2(p[1] - c[1], (p[0] - c[0]) * kx)
+}
+
+/**
+ * Hányadik kijáraton hajtunk ki: a kijárásra alkalmas ágakat a behajtástól az óramutatóval ellentétesen
+ * (ahogy a körben haladunk) sorba rendezzük. A közel azonos irányú ágak (pl. osztott pályás út két fele) egynek számítanak.
+ */
+function exitInfo(centre: LngLat, arms: Arm[], before: LngLat, after: LngLat, lanes: number, bIn: number, bOut: number): { info: RoundaboutInfo; unsure: boolean } | null {
+  const TAU = Math.PI * 2
+  const aIn = angleFrom(centre, before)
+  const rel = (a: number) => {
+    const r = (((a - aIn) % TAU) + TAU) % TAU
+    // A behajtási ág maga (kétirányú úton a megfordulás) a legutolsó kijárat
+    return r < 0.35 ? TAU : r
+  }
+  const exits = arms
+    .filter((a) => a.exit)
+    .map((a) => rel(angleFrom(centre, a.at)))
+    .sort((x, y) => x - y)
+    .filter((r, i, all) => i === 0 || r - all[i - 1] > 0.3)
+  if (!exits.length) return null
+  const want = rel(angleFrom(centre, after))
+  let best = 0
+  exits.forEach((r, i) => {
+    if (Math.abs(r - want) < Math.abs(exits[best] - want)) best = i
+  })
+  const delta = turnDelta(bIn, bOut)
+  const turn: Turn = Math.abs(delta) > 150 ? 'left' : delta > 45 ? 'right' : delta < -45 ? 'left' : 'straight'
+  const unsure = Math.abs(exits[best] - want) > 0.6 || exits.length < 2
+  return { info: { exit: best + 1, exits: exits.length, lanes: Math.min(lanes, 3), turn }, unsure }
 }
 
 /** Az útvonal melyik oldalán van a pont: + jobb, − bal */

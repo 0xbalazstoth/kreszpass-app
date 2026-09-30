@@ -1,5 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { EVAL_BLOCKS, EVAL_CODES, MAX_FAULT_LINES } from '../../domain/evalCodes'
+import { hazardDistance } from '../../domain/hazards'
 import { KIND_LABEL } from '../../domain/questions'
 import { compareCodes, evaluateSession } from '../../domain/scoring'
 import type { Outcome } from '../../domain/types'
@@ -150,11 +151,13 @@ export function ExamSheet({ sessionId }: { sessionId: string }) {
             <tbody>
               {session.attempts.map((a, i) => {
                 const s = situations.get(a.situationId)
+                // A váratlan helyzetek nincsenek eltárolva: a helyük az azonosítóban van
+                const hazardD = s ? null : hazardDistance(a.situationId)
                 return (
                   <tr key={i} className={a.codes.some((c) => EVAL_CODES[c]?.fatal) ? 'bad' : a.codes.length ? 'meh' : ''}>
                     <td>{i + 1}</td>
-                    <td>{s ? formatDistance(s.d) : '–'}</td>
-                    <td>{s ? KIND_LABEL[s.kind] : 'törölt helyzet'}</td>
+                    <td>{s ? formatDistance(s.d) : hazardD !== null ? formatDistance(hazardD) : '–'}</td>
+                    <td>{s ? KIND_LABEL[s.kind] : hazardD !== null ? KIND_LABEL.hazard : 'törölt helyzet'}</td>
                     <td>{a.promptTitle ?? a.promptId}</td>
                     <td>{OUTCOME_LABEL[a.outcome]}</td>
                     <td>{formatSeconds(a.reactionMs)}</td>

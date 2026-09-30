@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { fetchImages } from '../../data/mapillary'
 import { loadLocalIndex, type LocalIndex } from '../../data/osmLocal'
-import { DEFAULT_SETTINGS, type Settings } from '../../domain/types'
+import { DEFAULT_SETTINGS, type HazardDensity, type Settings } from '../../domain/types'
 import { db, getSettings, saveSettings } from '../../db'
 import { bboxOf } from '../../lib/geo'
 
@@ -180,6 +180,14 @@ export function SettingsPage() {
           <label>
             Tábla felvillanása (ms)
             <input type="number" min={200} step={100} value={s.signFlashMs} onChange={(e) => set({ signFlashMs: Number(e.target.value) })} />
+          </label>
+          <label>
+            Váratlan helyzetek az útvonalon
+            <select value={s.hazards} onChange={(e) => set({ hazards: e.target.value as HazardDensity })}>
+              <option value="off">Nincs</option>
+              <option value="few">Kevés (kb. 700 m-enként)</option>
+              <option value="many">Sok (kb. 400 m-enként)</option>
+            </select>
           </label>
         </div>
         <div className="toggles">

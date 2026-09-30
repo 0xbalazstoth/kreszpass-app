@@ -39,12 +39,12 @@ describe('letöltött KRESZ táblák', () => {
 
 describe('tábla hozzárendelések', () => {
   it('minden vázlat-táblatípus létező táblára mutat', () => {
-    const types: SignType[] = ['stop', 'give_way', 'priority_road', 'speed', 'crossing', 'roundabout']
+    const types: SignType[] = ['stop', 'give_way', 'priority_road', 'speed', 'crossing', 'roundabout', 'rail', 'tram', 'bus']
     for (const t of types) expect(SIGN_BY_CODE.has(signCodeFor(t, 30)), t).toBe(true)
   })
 
   it('minden helyzettípusnak van létező jelképe', () => {
-    const kinds: SituationKind[] = ['stop', 'give_way', 'priority', 'equal', 'signals', 'roundabout', 'crossing', 'speed_change']
+    const kinds: SituationKind[] = ['stop', 'give_way', 'priority', 'equal', 'signals', 'roundabout', 'crossing', 'speed_change', 'rail_crossing', 'tram_stop', 'bus_stop', 'hazard']
     for (const kind of kinds) expect(SIGN_BY_CODE.has(signForSituation({ kind, speedTo: 40 })), kind).toBe(true)
     expect(signForSituation({ kind: 'speed_change' })).toBe('C-043')
   })
@@ -56,10 +56,23 @@ describe('tábla hozzárendelések', () => {
     expect(speedSignCode(200)).toBe('C-033-130')
   })
 
-  it('körforgalomnál elsőbbségadás a bejáratnál, előtte figyelmeztető tábla', () => {
+  it('körforgalomnál elsőbbségadás és „Körforgalom” tábla a bejáratnál, előtte figyelmeztető tábla', () => {
     const signs = signsForScene({ layout: 'roundabout', turn: 'straight', mySign: 'roundabout', cars: [] })
-    expect(signs.mine).toEqual(['B-001'])
+    expect(signs.mine).toEqual(['B-001', 'D-017'])
     expect(signs.approach).toEqual(['A-056'])
+  })
+
+  it('villamos- és autóbuszmegálló, útépítés: valós táblák', () => {
+    const tram = signsForScene({ layout: 'road', turn: 'straight', mySign: 'tram', cars: [], transit: { kind: 'tram', island: false, state: 'doors_open' } })
+    expect(tram.mine).toEqual(['E-041'])
+    expect(tram.approach).toEqual(['A-053+H-023'])
+    const island = signsForScene({ layout: 'road', turn: 'straight', mySign: 'tram', cars: [], transit: { kind: 'tram', island: true, state: 'standing' } })
+    expect(island.approach).toEqual([])
+    expect(signsForScene({ layout: 'road', turn: 'straight', mySign: 'bus', cars: [] }).mine).toEqual(['E-039'])
+    const works = signsForScene({ layout: 'road', turn: 'straight', cars: [], hazard: 'roadworks' })
+    expect(works.mine).toEqual(['D-015'])
+    expect(works.approach).toEqual(['A-025'])
+    for (const code of [...tram.mine, ...tram.approach, ...works.mine, ...works.approach]) expect(SIGN_BY_CODE.has(code), code).toBe(true)
   })
 
   it('főútvonalon a keresztező utakon elsőbbségadás kötelező', () => {

@@ -69,7 +69,7 @@ export const EVAL_BLOCKS: EvalBlock[] = [
       c('4/3', 'kanyarban szakaszosan kormányoz, szabályos területen, de helytelen íven kanyarodik'),
       c('4/4', 'nem megfelelő az irányjelzés és a fékezés sorrendje', true),
       c('4/5', 'a mögöttes és a jármű melletti forgalmat nem rendszeresen ellenőrzi', true),
-      c('4/6', 'előzéskor, kikerüléskor, sávváltoztatáskor hirtelen kormánymozdulattal (meredeken) húzódik ki'),
+      c('4/6', 'előzéskor, kikerüléskor, sávváltoztatáskor hirtelen kormánymozdulattal (meredeken) húzódik ki', true),
       c('4/7', 'az előtte lévő akadályt nem veszi kellő időben észre', true),
       c('4/8', 'a jobbra vagy balra kanyarodásra kínálkozó alkalmat nem használja ki'),
       c('4/9', 'a besorolást késve, de egyébként szabályosan hajtja végre', true),
@@ -87,7 +87,7 @@ export const EVAL_BLOCKS: EvalBlock[] = [
       c('5/4', 'nem a forgalmi viszonyoknak megfelelően gyorsít, lassít, vezetése „darabos”', true),
       c('5/5', 'nem törekszik a forgalmi-, időjárási-, látási- és útviszonyoknak, valamint a jármű sajátosságainak megfelelő sebesség megválasztására (indokolatlanul lassan halad)', true),
       c('5/6', 'a követési távolságot helytelenül választja meg'),
-      c('5/7', 'álló járművek mellett a sebességhez mérten túl közel halad el'),
+      c('5/7', 'álló járművek mellett a sebességhez mérten túl közel halad el', true),
     ],
   },
   {

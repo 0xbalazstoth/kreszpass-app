@@ -3,7 +3,7 @@ import { EVAL_CODES } from './evalCodes'
 import { allPromptVariants, buildPrompts } from './questions'
 import type { Situation, SituationKind, Turn } from './types'
 
-const KINDS: SituationKind[] = ['stop', 'give_way', 'priority', 'equal', 'signals', 'roundabout', 'crossing', 'speed_change']
+const KINDS: SituationKind[] = ['stop', 'give_way', 'priority', 'equal', 'signals', 'roundabout', 'crossing', 'speed_change', 'rail_crossing', 'tram_stop', 'bus_stop', 'hazard']
 const TURNS: Turn[] = ['straight', 'left', 'right']
 
 const sit = (kind: SituationKind, turn: Turn): Situation => ({
@@ -61,6 +61,52 @@ describe('kérdéssablonok', () => {
 
   it('körforgalomnál nincs külön kanyarodási kérdés', () => {
     expect(buildPrompts(sit('roundabout', 'left'), seeded(3)).every((p) => !p.id.startsWith('turn:'))).toBe(true)
+  })
+
+  it('körforgalomnál előbb a behajtás, majd a kihajtás jön, a valós kijáratszámmal', () => {
+    const s = { ...sit('roundabout', 'straight'), roundabout: { exit: 3, exits: 4, lanes: 1, turn: 'left' as Turn } }
+    for (let seed = 1; seed < 8; seed++) {
+      const [entry, exit] = buildPrompts(s, seeded(seed))
+      expect(entry.scene.roundabout).toMatchObject({ phase: 'entry', exit: 3, exits: 4 })
+      expect(exit.scene.roundabout).toMatchObject({ phase: 'exit', exit: 3 })
+    }
+    expect(allPromptVariants(s).some((p) => p.text.includes('a 3. kijáraton'))).toBe(true)
+  })
+
+  it('első kijáratnál már behajtáskor jelezni kell, egyébként behajtáskor nem', () => {
+    const first = allPromptVariants({ ...sit('roundabout', 'straight'), roundabout: { exit: 1, exits: 4, lanes: 1, turn: 'right' } })
+    expect(first.map((p) => p.id)).toContain('roundabout:entry_signal_first')
+    const second = allPromptVariants({ ...sit('roundabout', 'straight'), roundabout: { exit: 2, exits: 4, lanes: 1, turn: 'straight' } })
+    const sig = second.find((p) => p.id === 'roundabout:entry_signal')!
+    expect(sig.options.find((o) => o.correct)!.text).toMatch(/Behajtáskor nem jelzek/)
+  })
+
+  it('sávválasztás csak kétsávos körforgalomnál, a kijárat szerint', () => {
+    const one = allPromptVariants({ ...sit('roundabout', 'straight'), roundabout: { exit: 3, exits: 4, lanes: 1, turn: 'left' } })
+    expect(one.some((p) => p.id.includes('lane'))).toBe(false)
+    const two = allPromptVariants({ ...sit('roundabout', 'straight'), roundabout: { exit: 3, exits: 4, lanes: 2, turn: 'left' } })
+    expect(two.find((p) => p.id === 'roundabout:lane')!.options.find((o) => o.correct)!.text).toMatch(/belső/)
+    expect(two.some((p) => p.id === 'roundabout:exit_lane')).toBe(true)
+  })
+
+  it('vasúti átjáró: az adatoknak megfelelő változatok', () => {
+    const ids = (rail: { barrier: boolean; lights: boolean }) => allPromptVariants({ ...sit('rail_crossing', 'straight'), rail }).map((p) => p.id)
+    expect(ids({ barrier: false, lights: false })).toEqual(expect.arrayContaining(['rail:no_signal', 'rail:train_visible', 'rail:queue', 'rail:no_overtake']))
+    expect(ids({ barrier: true, lights: true })).toEqual(expect.arrayContaining(['rail:barrier', 'rail:after_lift', 'rail:red_flash']))
+    expect(ids({ barrier: true, lights: true })).not.toContain('rail:train_visible')
+  })
+
+  it('villamosmegálló: járdasziget szerint', () => {
+    const ids = (island?: boolean) => allPromptVariants({ ...sit('tram_stop', 'straight'), transit: { kind: 'tram', island } }).map((p) => p.id)
+    expect(ids(false)).toEqual(['tram:doors_open', 'tram:arriving'])
+    expect(ids(true)).toEqual(['tram:island'])
+    expect(ids(undefined)).toHaveLength(3)
+  })
+
+  it('váratlan helyzetből minden fajta előfordul, a jelenet a fajtát mutatja', () => {
+    const variants = allPromptVariants(sit('hazard', 'straight'))
+    expect(new Set(variants.map((p) => p.scene.hazard)).size).toBe(7)
+    for (const p of variants) expect(p.id).toBe(`hazard:${p.scene.hazard}`)
   })
 
   it('sebességkorlát nélkül nincs sebességkérdés', () => {

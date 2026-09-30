@@ -28,8 +28,18 @@ Minden felhasznált csomag nyílt forráskódú, minden szolgáltatás ingyenes,
 8. **Gyenge pontok és felkészültség**: az útvonal kártyáján a felkészültség százalékban (a helyzetek legutóbbi három
    válasza alapján), a *Gyenge pontok* gomb a 10 leggyengébb helyzetet gyakoroltatja. A szerkesztőben a helyzetek az
    eredményeid szerint is színezhetők.
-9. **Mozdulat-gyakorlás** (bekapcsolható): kereszteződés előtt tükör (`M`), index (`←` `→`), fékezés (`Szóköz`), vagy a
-   képernyőn lévő gombokkal. A sorrendet és az időzítést a lap kódjai szerint értékeli (4/4, 4/5, 6/8, 8/6, 8/30, 8/26).
+9. **Mozdulat-gyakorlás** (bekapcsolható): kereszteződés, körforgalom, vasúti átjáró, megálló és akadály előtt tükör (`M`),
+   index (`←` `→`), fékezés (`Szóköz`), vagy a képernyőn lévő gombokkal. A sorrendet és az időzítést a lap kódjai szerint
+   értékeli (4/4, 4/5, 6/8, 8/6, 8/30, 8/26…). Körforgalomba behajtáskor nem kell jelezni, kivéve az első kijáratnál.
+10. **Körforgalom lépésről lépésre**: a valós adatokból számolt kijárat („a 2. kijáraton hajtson ki”), két kérdés: a behajtás
+    előtt (elsőbbség, irányjelzés, kétsávos körben a sávválasztás), majd a körben a kijárat előtt (kihajtás jelzése,
+    zebra, bejáratnál várakozó, átsorolás a külső sávba). A 3D nézetben a kör ágainak száma a valóságos.
+11. **Villamos- és autóbuszmegállók**: járdasziget nélküli villamosmegállónál a villamos elindulásáig várni kell
+    (KRESZ 35. § (2)); a járdasziget meglétét a szerkesztőben lehet jelölni. Lakott területen az induló autóbuszt el kell
+    engedni (24. § (3)).
+12. **Váratlan helyzetek**: az útvonal egyenes szakaszain (beállítható: nincs / kevés / sok) akadály a sávban szembejövővel
+    vagy anélkül, útépítés, a parkoló autók közül kiguruló labda, kinyíló ajtó, kerékpáros, hátulról érkező mentőautó
+    (visszapillantó tükörrel és szirénával). Ugyanazon az útvonalon mindig ugyanott vannak, de hogy mi történik, változik.
 
 Billentyűzettel az 1–4 gombok választanak, az Enter továbblép. Bekapcsolható a kérdések felolvasása és a
 hangos válasz (a sorszám kimondásával), ha a böngésző támogatja.
@@ -47,8 +57,10 @@ hangos válasz (a sorszám kimondásával), ha a böngésző támogatja.
   és a térképen: az OpenStreetMap-ben kitáblázott jelzőtáblák (pl. sebességkorlátozás, lakott terület), a főútvonal, és
   egyirányú utcába kanyarodva az „Egyirányú forgalmú út” tábla. A szerkesztő listája is mutatja őket.
 - **Vasúti átjárók.** Az OSM-ből felismert átjáróknál sínek, Andráskereszt, fénysorompó (villogó piros / fehér) és sorompó;
-  előtte figyelmeztető és háromcsíkos előjelző tábla. A régebben felismert útvonalaknál ehhez futtasd újra a
-  helyzetfelismerést.
+  előtte figyelmeztető és háromcsíkos előjelző tábla. Kérdések a megállás helyéről, a sínek mögötti torlódásról, az
+  előzési tilalomról, a közeledő vonatról és a felnyílt sorompó melletti piros fényről (KRESZ 39. §).
+- A körforgalom kijáratszámát, a villamos- és autóbuszmegállókat a régebben felismert útvonalaknál a helyzetfelismerés
+  újrafuttatásával kapod meg.
 - Gyengébb telefonon a Beállításokban a 3D nézet és a domborzat kikapcsolható: ilyenkor felülnézeti vázlat látszik.
 
 A táblák a Wikimedia Commonsról származnak (magyar KRESZ táblák, közkincs: PD-HU-exempt). Újraletöltés:
