@@ -8,9 +8,12 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "signs": "node scripts/fetch-signs.mjs",
+    "osm": "node scripts/build-osm.ts"
   },
   "dependencies": {
+    "@react-three/fiber": "^9.8.1",
     "@tmcw/togeojson": "^7.1.2",
     "@turf/turf": "^7.4.0",
     "dexie": "^4.4.6",
@@ -18,13 +21,16 @@
     "maplibre-gl": "^6.11.2",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "three": "^0.186.1",
     "ts-fsrs": "^5.4.2"
   },
   "devDependencies": {
+    "@osmix/pbf": "^0.0.10",
     "@types/geojson": "^7946.0.16",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
+    "@types/three": "^0.186.0",
     "@vitejs/plugin-react": "^6.1.1",
     "oxlint": "^1.81.0",
     "typescript": "~6.0.2",

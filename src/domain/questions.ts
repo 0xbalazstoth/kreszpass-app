@@ -530,6 +530,22 @@ function speedPrompts(s: Situation, rng: Rng): Draft[] {
 
 // ---------------------------------------------------------------- Kanyarodás előtt
 
+/** A helyzet állandó elemei (tábla, lámpa), hogy a kanyarodási kérdés is a valós helyet mutassa */
+export function baseScene(s: Situation): Partial<Scene> {
+  switch (s.kind) {
+    case 'stop':
+      return { mySign: 'stop' }
+    case 'give_way':
+      return { mySign: 'give_way' }
+    case 'priority':
+      return { mySign: 'priority_road', crossSign: 'give_way' }
+    case 'signals':
+      return { light: 'green' }
+    default:
+      return {}
+  }
+}
+
 function turnPrompts(s: Situation): Draft[] {
   if (s.turn === 'straight' || s.kind === 'roundabout') return []
   const dir = s.turn === 'left' ? 'Balra' : 'Jobbra'
@@ -538,7 +554,7 @@ function turnPrompts(s: Situation): Draft[] {
       id: 'turn:sequence',
       title: `${dir} kanyarodás előtt`,
       text: `${dir} fogsz kanyarodni. Mi a helyes sorrend?`,
-      scene: junctionScene(s.turn, {}),
+      scene: junctionScene(s.turn, baseScene(s)),
       options: [
         ok('Tükör → irányjelzés → besorolás → lassítás'),
         bad('Fékezés → irányjelzés → besorolás', '4/4'),
@@ -552,7 +568,7 @@ function turnPrompts(s: Situation): Draft[] {
       id: 'turn:lane',
       title: `${dir} kanyarodás, besorolás`,
       text: `${dir} fogsz kanyarodni kétirányú úton. Hová sorolsz be?`,
-      scene: junctionScene(s.turn, {}),
+      scene: junctionScene(s.turn, baseScene(s)),
       options:
         s.turn === 'right'
           ? [

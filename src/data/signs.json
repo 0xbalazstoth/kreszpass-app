@@ -1,0 +1,614 @@
+[
+  {
+    "code": "B-001",
+    "name": "Elsőbbségadás kötelező",
+    "group": "elsobbsegi",
+    "file": "B-001.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_B-001.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "B-002",
+    "name": "Állj! Elsőbbségadás kötelező",
+    "group": "elsobbsegi",
+    "file": "B-002.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_B-002.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "B-003",
+    "name": "Főútvonal",
+    "group": "elsobbsegi",
+    "file": "B-003.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_B-003.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "B-004",
+    "name": "Főútvonal vége",
+    "group": "elsobbsegi",
+    "file": "B-004.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_B-004.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "B-005",
+    "name": "Elsőbbségadás a szembejövő forgalomnak",
+    "group": "elsobbsegi",
+    "file": "B-005.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_B-005.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "B-006",
+    "name": "Elsőbbség a szembejövő forgalommal szemben",
+    "group": "elsobbsegi",
+    "file": "B-006.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_B-006.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "A-007",
+    "name": "Útszűkület",
+    "group": "veszely",
+    "file": "A-007.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_A-007.svg",
+    "license": "Public domain",
+    "author": "Rl91"
+  },
+  {
+    "code": "A-014",
+    "name": "Bukkanó",
+    "group": "veszely",
+    "file": "A-014.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_A-014.svg",
+    "license": "Public domain",
+    "author": "Rl91"
+  },
+  {
+    "code": "A-016",
+    "name": "Csúszós úttest",
+    "group": "veszely",
+    "file": "A-016.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_A-016.svg",
+    "license": "Public domain",
+    "author": "Rl91"
+  },
+  {
+    "code": "A-020",
+    "name": "Gyalogos-átkelőhely",
+    "group": "veszely",
+    "file": "A-020.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_A-020.svg",
+    "license": "Public domain",
+    "author": "Rl91"
+  },
+  {
+    "code": "A-021",
+    "name": "Gyermekek",
+    "group": "veszely",
+    "file": "A-021.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_A-021.svg",
+    "license": "Public domain",
+    "author": "Rl91"
+  },
+  {
+    "code": "A-022",
+    "name": "Kerékpárosok",
+    "group": "veszely",
+    "file": "A-022.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_A-022.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "A-025",
+    "name": "Útépítés",
+    "group": "veszely",
+    "file": "A-025.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_A-025.svg",
+    "license": "Public domain",
+    "author": "Rl91"
+  },
+  {
+    "code": "A-026",
+    "name": "Jelzőlámpa",
+    "group": "veszely",
+    "file": "A-026.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_A-026.svg",
+    "license": "Public domain",
+    "author": "Rl91"
+  },
+  {
+    "code": "A-027",
+    "name": "Útkereszteződés egyenrangú utak között",
+    "group": "veszely",
+    "file": "A-027.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_A-027.svg",
+    "license": "Public domain",
+    "author": "Rl91"
+  },
+  {
+    "code": "A-028",
+    "name": "Útkereszteződés alárendelt úttal",
+    "group": "veszely",
+    "file": "A-028.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_A-028.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "A-029",
+    "name": "Alárendelt útcsatlakozás balról",
+    "group": "veszely",
+    "file": "A-029.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_A-029.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "A-030",
+    "name": "Alárendelt útcsatlakozás jobbról",
+    "group": "veszely",
+    "file": "A-030.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_A-030.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "A-037",
+    "name": "Kétirányú forgalom",
+    "group": "veszely",
+    "file": "A-037.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_A-037.svg",
+    "license": "Public domain",
+    "author": "Rl91"
+  },
+  {
+    "code": "A-040",
+    "name": "Villamos",
+    "group": "veszely",
+    "file": "A-040.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_A-040.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "A-053",
+    "name": "Egyéb veszély",
+    "group": "veszely",
+    "file": "A-053.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_A-053.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "A-054",
+    "name": "Gyalogosok",
+    "group": "veszely",
+    "file": "A-054.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_A-054.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "A-056",
+    "name": "Körforgalmú útkereszteződés",
+    "group": "veszely",
+    "file": "A-056.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_A-056.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "C-001",
+    "name": "Behajtani tilos",
+    "group": "tilalmi",
+    "file": "C-001.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_C-001.svg",
+    "license": "Public domain",
+    "author": "Rl91"
+  },
+  {
+    "code": "C-002",
+    "name": "Mindkét irányból behajtani tilos",
+    "group": "tilalmi",
+    "file": "C-002.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_C-002.svg",
+    "license": "Public domain",
+    "author": "Rl91"
+  },
+  {
+    "code": "C-003",
+    "name": "Gépkocsival behajtani tilos",
+    "group": "tilalmi",
+    "file": "C-003.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_C-003.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "C-028",
+    "name": "Balra bekanyarodni tilos",
+    "group": "tilalmi",
+    "file": "C-028.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_C-028.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "C-029",
+    "name": "Jobbra bekanyarodni tilos",
+    "group": "tilalmi",
+    "file": "C-029.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_C-029.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "C-030",
+    "name": "Megfordulni tilos",
+    "group": "tilalmi",
+    "file": "C-030.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_C-030.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "C-031",
+    "name": "Előzni tilos",
+    "group": "tilalmi",
+    "file": "C-031.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_C-031.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "C-043",
+    "name": "Minden korlátozás vége",
+    "group": "tilalmi",
+    "file": "C-043.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_C-043.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "C-045",
+    "name": "Előzési tilalom vége",
+    "group": "tilalmi",
+    "file": "C-045.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_C-045.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "C-047",
+    "name": "Várakozni tilos",
+    "group": "tilalmi",
+    "file": "C-047.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_C-047.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "C-048",
+    "name": "Megállni tilos",
+    "group": "tilalmi",
+    "file": "C-048.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_C-048.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "C-033-5",
+    "name": "Sebességkorlátozás: 5 km/h",
+    "group": "tilalmi",
+    "file": "C-033-5.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_C-033-5.svg",
+    "license": "Public domain",
+    "author": "Rl91"
+  },
+  {
+    "code": "C-033-10",
+    "name": "Sebességkorlátozás: 10 km/h",
+    "group": "tilalmi",
+    "file": "C-033-10.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_C-033-10.svg",
+    "license": "Public domain",
+    "author": "Rl91"
+  },
+  {
+    "code": "C-033-20",
+    "name": "Sebességkorlátozás: 20 km/h",
+    "group": "tilalmi",
+    "file": "C-033-20.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_C-033-20.svg",
+    "license": "Public domain",
+    "author": "Rl91"
+  },
+  {
+    "code": "C-033-30",
+    "name": "Sebességkorlátozás: 30 km/h",
+    "group": "tilalmi",
+    "file": "C-033-30.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_C-033-30.svg",
+    "license": "Public domain",
+    "author": "Rl91"
+  },
+  {
+    "code": "C-033-40",
+    "name": "Sebességkorlátozás: 40 km/h",
+    "group": "tilalmi",
+    "file": "C-033-40.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_C-033-40.svg",
+    "license": "Public domain",
+    "author": "Rl91"
+  },
+  {
+    "code": "C-033-50",
+    "name": "Sebességkorlátozás: 50 km/h",
+    "group": "tilalmi",
+    "file": "C-033-50.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_C-033-50.svg",
+    "license": "Public domain",
+    "author": "Rl91"
+  },
+  {
+    "code": "C-033-60",
+    "name": "Sebességkorlátozás: 60 km/h",
+    "group": "tilalmi",
+    "file": "C-033-60.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_C-033-60.svg",
+    "license": "Public domain",
+    "author": "Rl91"
+  },
+  {
+    "code": "C-033-70",
+    "name": "Sebességkorlátozás: 70 km/h",
+    "group": "tilalmi",
+    "file": "C-033-70.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_C-033-70.svg",
+    "license": "Public domain",
+    "author": "Rl91"
+  },
+  {
+    "code": "C-033-80",
+    "name": "Sebességkorlátozás: 80 km/h",
+    "group": "tilalmi",
+    "file": "C-033-80.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_C-033-80.svg",
+    "license": "Public domain",
+    "author": "Rl91"
+  },
+  {
+    "code": "C-033-90",
+    "name": "Sebességkorlátozás: 90 km/h",
+    "group": "tilalmi",
+    "file": "C-033-90.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_C-033-90.svg",
+    "license": "Public domain",
+    "author": "Rl91"
+  },
+  {
+    "code": "C-033-100",
+    "name": "Sebességkorlátozás: 100 km/h",
+    "group": "tilalmi",
+    "file": "C-033-100.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_C-033-100.svg",
+    "license": "Public domain",
+    "author": "Rl91"
+  },
+  {
+    "code": "C-033-110",
+    "name": "Sebességkorlátozás: 110 km/h",
+    "group": "tilalmi",
+    "file": "C-033-110.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_C-033-110.svg",
+    "license": "Public domain",
+    "author": "Rl91"
+  },
+  {
+    "code": "C-033-120",
+    "name": "Sebességkorlátozás: 120 km/h",
+    "group": "tilalmi",
+    "file": "C-033-120.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_C-033-120.svg",
+    "license": "Public domain",
+    "author": "Rl91"
+  },
+  {
+    "code": "C-033-130",
+    "name": "Sebességkorlátozás: 130 km/h",
+    "group": "tilalmi",
+    "file": "C-033-130.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_C-033-130.svg",
+    "license": "Public domain",
+    "author": "Rl91"
+  },
+  {
+    "code": "D-001",
+    "name": "Kötelező haladási irány: egyenesen",
+    "group": "utasito",
+    "file": "D-001.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_D-001.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "D-002",
+    "name": "Kötelező haladási irány: balra",
+    "group": "utasito",
+    "file": "D-002.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_D-002.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "D-003",
+    "name": "Kötelező haladási irány: jobbra",
+    "group": "utasito",
+    "file": "D-003.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_D-003.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "D-004",
+    "name": "Kötelező haladási irány: egyenesen vagy balra",
+    "group": "utasito",
+    "file": "D-004.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_D-004.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "D-005",
+    "name": "Kötelező haladási irány: egyenesen vagy jobbra",
+    "group": "utasito",
+    "file": "D-005.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_D-005.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "D-010",
+    "name": "Kötelező haladási irány: jobbra vagy balra",
+    "group": "utasito",
+    "file": "D-010.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_D-010.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "D-014",
+    "name": "Kötelező elhaladási irány: jobbra",
+    "group": "utasito",
+    "file": "D-014.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_D-014.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "D-015",
+    "name": "Kötelező elhaladási irány: balra",
+    "group": "utasito",
+    "file": "D-015.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_D-015.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "D-023",
+    "name": "Kerékpárút",
+    "group": "utasito",
+    "file": "D-023.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_D-023.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "D-025",
+    "name": "Gyalogút",
+    "group": "utasito",
+    "file": "D-025.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_D-025.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "E-012",
+    "name": "Egyirányú forgalmú út",
+    "group": "tajekoztato",
+    "file": "E-012.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_E-012.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "E-020",
+    "name": "Lakott terület kezdete",
+    "group": "tajekoztato",
+    "file": "E-020.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_E-020.svg",
+    "license": "Public domain",
+    "author": "Rl91"
+  },
+  {
+    "code": "E-021",
+    "name": "Lakott terület vége",
+    "group": "tajekoztato",
+    "file": "E-021.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_E-021.svg",
+    "license": "Public domain",
+    "author": "Rl91"
+  },
+  {
+    "code": "E-028",
+    "name": "Övezeti sebességkorlátozás (30 km/h)",
+    "group": "tajekoztato",
+    "file": "E-028.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_E-028.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "E-029",
+    "name": "Övezeti sebességkorlátozás vége",
+    "group": "tajekoztato",
+    "file": "E-029.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_E-029.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "E-032",
+    "name": "Gyalogos övezet",
+    "group": "tajekoztato",
+    "file": "E-032.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_E-032.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "E-033",
+    "name": "Gyalogos övezet vége",
+    "group": "tajekoztato",
+    "file": "E-033.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_E-033.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "E-038",
+    "name": "Kijelölt gyalogos-átkelőhely",
+    "group": "tajekoztato",
+    "file": "E-038.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_E-038.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "E-043",
+    "name": "Lakó-pihenő övezet",
+    "group": "tajekoztato",
+    "file": "E-043.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_E-043.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  },
+  {
+    "code": "E-044",
+    "name": "Lakó-pihenő övezet vége",
+    "group": "tajekoztato",
+    "file": "E-044.png",
+    "source": "https://commons.wikimedia.org/wiki/File:Hungary_road_sign_E-044.svg",
+    "license": "Public domain",
+    "author": "Gigillo83"
+  }
+]

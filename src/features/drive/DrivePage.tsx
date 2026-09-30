@@ -1,7 +1,9 @@
 import type { LineString } from 'geojson'
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import { MapView } from '../../components/MapView'
+import { MapView, type FlyAlong, type MapPin } from '../../components/MapView'
 import { SceneView } from '../../components/SceneView'
+import { DriveScene } from '../../components/scene3d'
+import { preloadScene3D } from '../../components/scene3d/load'
 import { approachFrames, type MlImage } from '../../data/mapillary'
 import { EVAL_CODES } from '../../domain/evalCodes'
 import { buildPrompts, KIND_LABEL, type Prompt } from '../../domain/questions'
@@ -9,7 +11,9 @@ import { classifyAnswer } from '../../domain/scoring'
 import type { Attempt, ExamSession, Mode, Route, Settings, Situation } from '../../domain/types'
 import { db, getSettings, situationsOf } from '../../db'
 import { formatSeconds } from '../../lib/format'
+import { RouteGeom, type LngLat } from '../../lib/geo'
 import { href, navigate } from '../../lib/router'
+import { sceneMapPins } from './mapSigns'
 import { dueSituations, recordReview, worstOutcome } from './review'
 import { speak, stopSpeaking, useVoiceAnswers, voiceSupported } from './speech'
 
@@ -24,8 +28,27 @@ interface Step {
 type Phase = 'loading' | 'empty' | 'intro' | 'approach' | 'question' | 'feedback' | 'saving'
 
 const MODE_LABEL: Record<Mode, string> = { practice: 'Gyakorlás', exam: 'Próbavizsga', review: 'Ismétlés' }
-const SCHEMATIC_APPROACH_MS = 1300
-const FRAME_WAIT_MS = 1500
+/** Legfeljebb ennyit várunk az utcaképekre a közeledés elején */
+const FRAME_WAIT_MS = 1200
+
+/** Első személyű kamera-út a térképen: a helyzet előtti 150 m, 5 méterenként */
+function flyPathFor(line: LineString, s: Situation, durationMs: number): FlyAlong | null {
+  try {
+    const geom = new RouteGeom(line)
+    const end = Math.max(0, s.d - 14)
+    const begin = Math.max(0, s.d - 150)
+    if (end - begin < 10) return null
+    const path: LngLat[] = []
+    const bearings: number[] = []
+    for (let d = begin; d <= end; d += 5) {
+      path.push(geom.pointAt(d))
+      bearings.push(geom.bearingAt(d, 15))
+    }
+    return { path, bearings, durationMs, key: s.id }
+  } catch {
+    return null
+  }
+}
 
 /** Utcaképek gyorsítótára a munkamenet idejére */
 const frameCache = new Map<string, Promise<MlImage[]>>()
@@ -69,6 +92,7 @@ export function DrivePage({ routeId, mode }: Props) {
   const [voice, setVoice] = useState(false)
   const [voiceError, setVoiceError] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [mainView, setMainView] = useState<'scene' | 'map'>('scene')
   const questionStart = useRef(0)
   const timeoutRef = useRef<number | undefined>(undefined)
   const startedAt = useRef(Date.now())
@@ -102,6 +126,7 @@ export function DrivePage({ routeId, mode }: Props) {
       setLines(lineMap)
       setSteps(built)
       setReviewCount(list.filter((s) => s.needsReview).length)
+      if (st.view3d) preloadScene3D()
       setPhase(built.length ? 'intro' : 'empty')
     })().catch((e) => {
       if (!cancelled) setLoadError(e instanceof Error ? e.message : String(e))
@@ -120,27 +145,23 @@ export function DrivePage({ routeId, mode }: Props) {
     if (phase !== 'approach' || !step || !settings) return
     let cancelled = false
     const timers: number[] = []
+    const duration = settings.approachMs
     // A következő helyzet képeit előre betöltjük
     const next = steps.slice(idx + 1).find((s) => s.firstOfSituation)
     if (token && next && lines[next.situation.routeId]) void framesFor(token, lines[next.situation.routeId], next.situation)
 
-    const toQuestion = () => !cancelled && setPhase('question')
-    if (!token || !line) {
-      setFrames([])
-      timers.push(window.setTimeout(toQuestion, SCHEMATIC_APPROACH_MS))
-    } else {
-      void withTimeout(framesFor(token, line, step.situation), FRAME_WAIT_MS, []).then((fr) => {
+    // A 3D jelenet és a térképes repülés ugyanennyi ideig tart, utána jön a kérdés
+    timers.push(window.setTimeout(() => !cancelled && setPhase('question'), duration))
+    if (token && line) {
+      const began = performance.now()
+      void withTimeout(framesFor(token, line, step.situation), Math.min(FRAME_WAIT_MS, duration / 2), []).then((fr) => {
         if (cancelled) return
         setFrames(fr)
         setFrameIdx(0)
-        if (!fr.length) {
-          timers.push(window.setTimeout(toQuestion, SCHEMATIC_APPROACH_MS))
-          return
-        }
-        fr.forEach((_, i) => timers.push(window.setTimeout(() => !cancelled && setFrameIdx(i), i * settings.frameMs)))
-        timers.push(window.setTimeout(toQuestion, fr.length * settings.frameMs))
+        const remaining = Math.max(0, duration - (performance.now() - began))
+        fr.forEach((_, i) => timers.push(window.setTimeout(() => !cancelled && setFrameIdx(i), (i * remaining) / fr.length)))
       })
-    }
+    } else setFrames([])
     return () => {
       cancelled = true
       timers.forEach(clearTimeout)
@@ -284,6 +305,17 @@ export function DrivePage({ routeId, mode }: Props) {
     [step],
   )
 
+  // A térképen csak az aktuális kérdés táblái, ugyanott, ahol a 3D jelenetben állnak
+  const pins = useMemo<MapPin[]>(() => (step && line ? sceneMapPins(line, step.situation, step.prompt.scene) : []), [step, line])
+
+  const situationId = step?.situation.id
+  const fly = useMemo(
+    () => (step && line && settings ? flyPathFor(line, step.situation, settings.approachMs) : null),
+    // Helyzetenként egyszer repülünk
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [situationId, line, settings?.approachMs],
+  )
+
   // ------------------------------------------------ Megjelenítés
   if (loadError) return <p className="status error">{loadError}</p>
   if (phase === 'loading' || !settings) return <p className="muted">Betöltés…</p>
@@ -313,7 +345,8 @@ export function DrivePage({ routeId, mode }: Props) {
         </h1>
         <p>
           {situationCount} helyzet, {steps.length} kérdés. Minden helyzet előtt „közeledsz”
-          {token ? ' (Mapillary utcaképekkel, ha vannak)' : ' (a térképen és a vázlaton)'}, majd a kérdésre időre kell válaszolnod.
+          {settings.view3d ? ' a 3D nézetben' : ' a vázlaton'}, közben a térkép a valódi útvonaladon repül végig
+          {token ? ' (Mapillary utcaképekkel, ha vannak)' : ''}. Utána a kérdésre időre kell válaszolnod.
         </p>
         <ul className="rules">
           <li>
@@ -367,6 +400,48 @@ export function DrivePage({ routeId, mode }: Props) {
   const progress = `${idx + 1} / ${steps.length}`
   const t = settings
 
+  const scenePane = (
+    <div className={`pane ${mainView === 'scene' ? 'pane-main' : 'pane-inset'}`}>
+      <DriveScene key={idx} scene={step.prompt.scene} animate={step.firstOfSituation} approachMs={t.approachMs} enabled={t.view3d} />
+      {mainView !== 'scene' && (
+        <button className="pane-swap" onClick={() => setMainView('scene')} aria-label="3D nézet nagyban">
+          ⤢
+        </button>
+      )}
+    </div>
+  )
+  const mapPane = (
+    <div className={`pane ${mainView === 'map' ? 'pane-main' : 'pane-inset'}`}>
+      {line && (
+        <MapView
+          className="drive-map"
+          line={line}
+          pins={pins}
+          showPinCircles={false}
+          quiet
+          position={position}
+          interactive={false}
+          terrain={t.terrain}
+          flyAlong={fly}
+          focus={fly ? null : { lngLat: [step.situation.lng, step.situation.lat], zoom: 18, bearing: step.situation.bearing, pitch: 70, key: step.situation.id }}
+        />
+      )}
+      {photo && (
+        <figure className="photo">
+          <img src={photo.url} alt="Utcakép a helyzet előtt" />
+          <figcaption>
+            Utcakép: Mapillary közreműködők{photo.capturedAt ? `, ${new Date(photo.capturedAt).getFullYear()}` : ''} · CC BY-SA
+          </figcaption>
+        </figure>
+      )}
+      {mainView !== 'map' && (
+        <button className="pane-swap" onClick={() => setMainView('map')} aria-label="Térkép nagyban">
+          ⤢
+        </button>
+      )}
+    </div>
+  )
+
   return (
     <section className="drive">
       <header className="drive-top">
@@ -384,32 +459,11 @@ export function DrivePage({ routeId, mode }: Props) {
 
       <div className="drive-grid">
         <div className="drive-visual">
-          {line && (
-            <MapView
-              className="drive-map"
-              line={line}
-              position={position}
-              interactive={false}
-              focus={{ lngLat: [step.situation.lng, step.situation.lat], zoom: 17.5, bearing: step.situation.bearing, pitch: 55, key: step.situation.id }}
-            />
-          )}
-          {photo && (
-            <figure className="photo">
-              <img src={photo.url} alt="Utcakép a helyzet előtt" />
-              <figcaption>
-                Utcakép: Mapillary közreműködők{photo.capturedAt ? `, ${new Date(photo.capturedAt).getFullYear()}` : ''} · CC BY-SA
-              </figcaption>
-            </figure>
-          )}
+          {scenePane}
+          {mapPane}
         </div>
 
         <div className="drive-side">
-          <SceneView
-            key={`${idx}-${phase === 'approach'}`}
-            scene={step.prompt.scene}
-            approachMs={phase === 'approach' && !photo ? SCHEMATIC_APPROACH_MS : 0}
-            className="drive-scene"
-          />
           {phase === 'approach' && <p className="approaching">Közeledés…</p>}
           {showQuestion && (
             <div className="question">
@@ -474,7 +528,10 @@ function Feedback({ attempt, prompt, onNext }: { attempt: Attempt; prompt: Promp
           {EVAL_CODES[c]?.fatal && <span className="badge bad">bukás</span>}
         </p>
       ))}
-      <p>{prompt.explanation}</p>
+      <div className="feedback-body">
+        <SceneView scene={prompt.scene} className="feedback-scene" />
+        <p>{prompt.explanation}</p>
+      </div>
       <button className="btn primary" onClick={onNext} autoFocus>
         Tovább (Enter)
       </button>

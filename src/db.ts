@@ -1,6 +1,15 @@
 import Dexie, { type Table } from 'dexie'
 import type { OsmData } from './data/osm'
-import { DEFAULT_SETTINGS, type ExamSession, type Route, type Settings, type Situation, type SituationCard } from './domain/types'
+import {
+  DEFAULT_SETTINGS,
+  type ExamSession,
+  type Route,
+  type Settings,
+  type SignCard,
+  type SignSession,
+  type Situation,
+  type SituationCard,
+} from './domain/types'
 
 export interface OsmCacheEntry {
   key: string
@@ -15,6 +24,8 @@ class KreszDb extends Dexie {
   cards!: Table<SituationCard, string>
   settings!: Table<Settings, string>
   osmCache!: Table<OsmCacheEntry, string>
+  signCards!: Table<SignCard, string>
+  signSessions!: Table<SignSession, string>
 
   constructor() {
     super('kreszpass')
@@ -25,6 +36,11 @@ class KreszDb extends Dexie {
       cards: 'situationId, routeId, card.due',
       settings: 'id',
       osmCache: 'key, at',
+    })
+    // 2. változat: táblafelismerő gyakorlás (a meglévő adatok változatlanok)
+    this.version(2).stores({
+      signCards: 'code, card.due',
+      signSessions: 'id, startedAt',
     })
   }
 }

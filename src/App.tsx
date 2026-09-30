@@ -3,6 +3,7 @@ import { ExamSheet } from './features/exam-sheet/ExamSheet'
 import { RouteEditor } from './features/routes/RouteEditor'
 import { RoutesPage } from './features/routes/RoutesPage'
 import { SettingsPage } from './features/settings/SettingsPage'
+import { SignDrillPage } from './features/signs/SignDrillPage'
 import { StatsPage } from './features/stats/StatsPage'
 import type { Mode } from './domain/types'
 import { href, useHashRoute } from './lib/router'
@@ -10,6 +11,7 @@ import { href, useHashRoute } from './lib/router'
 const NAV = [
   { path: '', label: 'Útvonalak', match: ['', 'route', 'drive', 'sheet'] },
   { path: 'review', label: 'Ismétlés', match: ['review'] },
+  { path: 'signs', label: 'Táblák', match: ['signs'] },
   { path: 'stats', label: 'Statisztika', match: ['stats'] },
   { path: 'settings', label: 'Beállítások', match: ['settings'] },
 ]
@@ -38,6 +40,9 @@ export default function App() {
       break
     case 'sheet':
       content = arg ? <ExamSheet sessionId={arg} /> : null
+      break
+    case 'signs':
+      content = <SignDrillPage />
       break
     case 'stats':
       content = <StatsPage />

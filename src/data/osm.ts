@@ -87,3 +87,17 @@ export function parseMaxspeed(tags: Tags | undefined): number | null {
   if (tags.highway === 'living_street') return 20
   return null
 }
+
+/** Több forrásból (szakaszok, csempék) származó adatok összefésülése; az ismétlődő elemek egyszer szerepelnek */
+export function mergeOsm(parts: OsmData[]): OsmData {
+  const seen = new Set<string>()
+  const elements: OsmData['elements'] = []
+  for (const part of parts)
+    for (const el of part.elements) {
+      const key = `${el.type}/${el.id}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      elements.push(el)
+    }
+  return { elements }
+}

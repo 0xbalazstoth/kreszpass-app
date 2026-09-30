@@ -77,6 +77,26 @@ export interface SituationCard {
   card: Card
 }
 
+export interface SignCard {
+  code: string
+  card: Card
+}
+
+export interface SignResult {
+  code: string
+  correct: boolean
+  /** A válaszlehetőségek megjelenésétől mért idő; null, ha lejárt az idő */
+  reactionMs: number | null
+}
+
+export interface SignSession {
+  id: string
+  startedAt: number
+  finishedAt?: number
+  group: string
+  results: SignResult[]
+}
+
 export interface Settings {
   id: 'settings'
   mapillaryToken: string
@@ -86,8 +106,14 @@ export interface Settings {
   lateMs: number
   /** Eddig „lassan ismeri fel” → 6/2, utána időtúllépés → 8/25 */
   timeoutMs: number
-  /** A közeledés képkockáinak ideje (ms) */
-  frameMs: number
+  /** A közeledés (3D jelenet, térképes repülés, utcaképek) időtartama (ms) */
+  approachMs: number
+  /** 3D nézet a vezetőülésből */
+  view3d: boolean
+  /** Domborzat a térképen */
+  terrain: boolean
+  /** Táblafelismerő gyakorlás: ennyi ideig látszik a tábla (ms) */
+  signFlashMs: number
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -96,5 +122,8 @@ export const DEFAULT_SETTINGS: Settings = {
   okMs: 4000,
   lateMs: 7000,
   timeoutMs: 12000,
-  frameMs: 700,
+  approachMs: 2500,
+  view3d: true,
+  terrain: true,
+  signFlashMs: 1200,
 }

@@ -8,6 +8,8 @@ import type { LngLat } from '../lib/geo'
  */
 const OSRM = 'https://router.project-osrm.org/route/v1/driving'
 const CHUNK = 80
+const UNAVAILABLE =
+  'Az ingyenes útvonaltervező szerver most nem érhető el. Próbáld újra később, vagy használd az „Egyenes szakaszok” gombot (sűrűbb útpontokkal), illetve a GPX/KML importot.'
 
 export async function snapToRoads(waypoints: LngLat[], signal?: AbortSignal): Promise<LineString> {
   if (waypoints.length < 2) throw new Error('Legalább két útpont kell')
@@ -15,8 +17,17 @@ export async function snapToRoads(waypoints: LngLat[], signal?: AbortSignal): Pr
   for (let start = 0; start < waypoints.length - 1; start += CHUNK - 1) {
     const chunk = waypoints.slice(start, start + CHUNK)
     const path = chunk.map(([lng, lat]) => `${lng.toFixed(6)},${lat.toFixed(6)}`).join(';')
-    const res = await fetch(`${OSRM}/${path}?overview=full&geometries=geojson&continue_straight=true`, { signal })
-    if (!res.ok) throw new Error(`Útvonaltervező hiba: ${res.status}`)
+    const timeout = AbortSignal.timeout(20_000)
+    let res: Response
+    try {
+      res = await fetch(`${OSRM}/${path}?overview=full&geometries=geojson&continue_straight=true`, {
+        signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+      })
+    } catch (e) {
+      if (signal?.aborted) throw e
+      throw new Error(UNAVAILABLE)
+    }
+    if (!res.ok) throw new Error(`${UNAVAILABLE} (${res.status})`)
     const json = (await res.json()) as { code: string; message?: string; routes?: { geometry: LineString }[] }
     if (json.code !== 'Ok' || !json.routes?.length) throw new Error(`Útvonaltervező: ${json.message ?? json.code}`)
     const part = json.routes[0].geometry.coordinates

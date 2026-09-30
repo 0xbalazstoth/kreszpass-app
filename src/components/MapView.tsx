@@ -5,11 +5,15 @@ import 'maplibre-gl/dist/maplibre-gl.css'
 // különben a függőség-előcsomagolás után nem találja.
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import { useEffect, useRef, useState } from 'react'
+import { signUrl } from '../data/signs'
+import { LIGHT_ICON } from '../features/drive/mapSigns'
 import type { LngLat } from '../lib/geo'
 
 /** Ingyenes, API-kulcs nélküli vektoros térképstílus */
 export const MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty'
 const DEFAULT_CENTER: LngLat = [19.0402, 47.4979] // Budapest
+/** Ingyenes domborzati csempék (AWS Open Data, Mapzen Terrarium formátum), kulcs nélkül */
+const TERRAIN_TILES = 'https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'
 
 setWorkerUrl(workerUrl)
 
@@ -19,6 +23,74 @@ export interface MapPin {
   label: string
   color: string
   selected?: boolean
+  /** Valódi KRESZ tábla kódja, a térképen a helyén jelenik meg */
+  sign?: string
+}
+
+/** Első személyű kamera-út az útvonal mentén */
+export interface FlyAlong {
+  path: LngLat[]
+  bearings: number[]
+  durationMs: number
+  key: string
+  zoom?: number
+  pitch?: number
+}
+
+/** Jelzőlámpa jele (nincs róla táblakép), 128 px magasra rajzolva */
+function drawLightIcon(): ImageData | null {
+  const canvas = document.createElement('canvas')
+  canvas.width = 56
+  canvas.height = 128
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+  ctx.fillStyle = '#111827'
+  ctx.strokeStyle = '#ffffff'
+  ctx.lineWidth = 4
+  ctx.beginPath()
+  ctx.roundRect(2, 2, 52, 124, 12)
+  ctx.fill()
+  ctx.stroke()
+  for (const [i, color] of ['#ef4444', '#facc15', '#22c55e'].entries()) {
+    ctx.fillStyle = color
+    ctx.beginPath()
+    ctx.arc(28, 26 + i * 38, 14, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  return ctx.getImageData(0, 0, 56, 128)
+}
+
+/** A táblaképek egyszer töltődnek be, kis méretre (128 px magas) rasztereve */
+const signImages = new Map<string, Promise<ImageData | null>>()
+function loadSignImage(code: string): Promise<ImageData | null> {
+  let p = signImages.get(code)
+  if (!p && code === LIGHT_ICON) p = Promise.resolve(drawLightIcon())
+  if (!p) {
+    p = new Promise((resolve) => {
+      const img = new Image()
+      img.onload = () => {
+        const h = 128
+        const w = Math.max(1, Math.round((img.naturalWidth / img.naturalHeight) * h))
+        const canvas = document.createElement('canvas')
+        canvas.width = w
+        canvas.height = h
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return resolve(null)
+        ctx.drawImage(img, 0, 0, w, h)
+        resolve(ctx.getImageData(0, 0, w, h))
+      }
+      img.onerror = () => resolve(null)
+      img.src = signUrl(code)
+    })
+    signImages.set(code, p)
+  }
+  return p
+}
+
+function lerpBearing(a: number, b: number, t: number): number {
+  let d = ((b - a + 540) % 360) - 180
+  if (d === -180) d = 180
+  return a + d * t
 }
 
 interface Props {
@@ -36,6 +108,14 @@ interface Props {
   interactive?: boolean
   className?: string
   cursor?: string
+  /** Domborzat (3D terep) */
+  terrain?: boolean
+  /** Kamera-út az útvonal mentén (vezetés közbeni közeledés) */
+  flyAlong?: FlyAlong | null
+  /** Számozott körök a helyzeteknél (vezetés közben csak a táblák látszanak) */
+  showPinCircles?: boolean
+  /** Letisztult nézet vezetéshez: üzletek, látnivalók jelei nélkül, összecsukott forrásmegjelöléssel */
+  quiet?: boolean
 }
 
 const empty: FeatureCollection = { type: 'FeatureCollection', features: [] }
@@ -59,6 +139,8 @@ export function MapView(props: Props) {
         style: MAP_STYLE,
         center: DEFAULT_CENTER,
         zoom: 12,
+        // A vezetőülésből nézett repüléshez erősebb döntés kell az alapértelmezett 60°-nál
+        maxPitch: 80,
         interactive: props.interactive ?? true,
         attributionControl: { compact: true },
       })
@@ -117,6 +199,46 @@ export function MapView(props: Props) {
         paint: { 'text-color': '#ffffff' },
       })
       map.addLayer({
+        id: 'pin-signs',
+        type: 'symbol',
+        source: 'pins',
+        filter: ['has', 'sign'],
+        layout: {
+          'icon-image': ['concat', 'sign-', ['get', 'sign']],
+          'icon-size': ['interpolate', ['linear'], ['zoom'], 13, 0.16, 16, 0.28, 19, 0.45],
+          'icon-anchor': 'bottom',
+          'icon-offset': [0, props.showPinCircles === false ? 0 : -40],
+          'icon-allow-overlap': true,
+          'icon-pitch-alignment': 'viewport',
+          'icon-rotation-alignment': 'viewport',
+        },
+      })
+      if (props.quiet) {
+        // Az üzletek, látnivalók ikonjai és a szürke 3D épülettömbök csak zavarnák a táblák felismerését
+        for (const layer of map.getStyle().layers) {
+          const poi = layer.type === 'symbol' && 'source-layer' in layer && /^(poi|aerodrome_label|mountain_peak)$/.test(layer['source-layer'] ?? '')
+          if (poi || layer.type === 'fill-extrusion') map.setLayoutProperty(layer.id, 'visibility', 'none')
+        }
+        // Erősen döntött nézetben a horizont fölött ég legyen, ne fekete sáv
+        map.setSky({ 'sky-color': '#bcd6ec', 'horizon-color': '#e8eef4', 'fog-color': '#e8eef4', 'sky-horizon-blend': 0.6, 'horizon-fog-blend': 0.6 })
+        container.current?.querySelector('.maplibregl-ctrl-attrib')?.classList.remove('maplibregl-compact-show')
+      }
+      if (props.showPinCircles === false) {
+        map.setLayoutProperty('pins', 'visibility', 'none')
+        map.setLayoutProperty('pin-labels', 'visibility', 'none')
+      }
+      if (props.terrain) {
+        map.addSource('terrain', {
+          type: 'raster-dem',
+          tiles: [TERRAIN_TILES],
+          encoding: 'terrarium',
+          tileSize: 256,
+          maxzoom: 15,
+          attribution: 'Domborzat: Mapzen, AWS Open Data',
+        })
+        map.setTerrain({ source: 'terrain', exaggeration: 1.3 })
+      }
+      map.addLayer({
         id: 'position',
         type: 'circle',
         source: 'position',
@@ -131,7 +253,11 @@ export function MapView(props: Props) {
     })
     map.on('mouseenter', 'pins', () => (map.getCanvas().style.cursor = 'pointer'))
     map.on('mouseleave', 'pins', () => (map.getCanvas().style.cursor = ''))
+    // A térkép a tárolója méretváltozását is kövesse (pl. kis ablak ↔ fő nézet csere)
+    const ro = new ResizeObserver(() => map.resize())
+    ro.observe(container.current)
     return () => {
+      ro.disconnect()
       map.remove()
       mapRef.current = null
       setLoaded(false)
@@ -160,18 +286,63 @@ export function MapView(props: Props) {
   }, [loaded, props.waypoints])
 
   useEffect(() => {
-    if (!loaded || !mapRef.current) return
-    const src = mapRef.current.getSource('pins') as GeoJSONSource
-    const sorted = [...(props.pins ?? [])].sort((a, b) => Number(a.selected ?? false) - Number(b.selected ?? false))
-    src.setData({
-      type: 'FeatureCollection',
-      features: sorted.map((p) => ({
-        type: 'Feature',
-        geometry: { type: 'Point', coordinates: p.lngLat },
-        properties: { id: p.id, label: p.label, color: p.color, selected: p.selected ?? false },
-      })),
+    const map = mapRef.current
+    if (!loaded || !map) return
+    let cancelled = false
+    const pins = props.pins ?? []
+    // Előbb a táblaképeket töltjük be, hogy a szimbólumréteg azonnal meg tudja jeleníteni őket
+    const codes = [...new Set(pins.flatMap((p) => (p.sign ? [p.sign] : [])))]
+    void Promise.all(
+      codes.map(async (code) => {
+        const img = await loadSignImage(code)
+        if (img && !cancelled && !map.hasImage(`sign-${code}`)) map.addImage(`sign-${code}`, img, { pixelRatio: 1 })
+      }),
+    ).then(() => {
+      if (cancelled) return
+      const src = map.getSource('pins') as GeoJSONSource | undefined
+      const sorted = [...pins].sort((a, b) => Number(a.selected ?? false) - Number(b.selected ?? false))
+      src?.setData({
+        type: 'FeatureCollection',
+        features: sorted.map((p) => ({
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: p.lngLat },
+          properties: { id: p.id, label: p.label, color: p.color, selected: p.selected ?? false, ...(p.sign ? { sign: p.sign } : {}) },
+        })),
+      })
     })
+    return () => {
+      cancelled = true
+    }
   }, [loaded, props.pins])
+
+  useEffect(() => {
+    const map = mapRef.current
+    const fly = props.flyAlong
+    if (!loaded || !map || !fly || fly.path.length === 0) return
+    let raf = 0
+    const t0 = performance.now()
+    const n = fly.path.length
+    const step = () => {
+      const raw = Math.min(1, (performance.now() - t0) / fly.durationMs)
+      const t = 1 - Math.pow(1 - raw, 3) // ugyanaz a lassulás, mint a 3D jelenetben
+      const f = t * (n - 1)
+      const i = Math.min(n - 2, Math.floor(f))
+      const u = n === 1 ? 0 : f - i
+      const a = fly.path[Math.max(0, i)]
+      const b = fly.path[Math.min(n - 1, i + 1)]
+      map.jumpTo({
+        center: [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u],
+        bearing: lerpBearing(fly.bearings[Math.max(0, i)], fly.bearings[Math.min(n - 1, i + 1)], u),
+        pitch: fly.pitch ?? 74,
+        zoom: fly.zoom ?? 18.3,
+      })
+      if (raw < 1) raf = requestAnimationFrame(step)
+    }
+    step()
+    return () => cancelAnimationFrame(raf)
+    // Csak új kamera-út esetén indul
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, props.flyAlong?.key])
 
   useEffect(() => {
     if (!loaded || !mapRef.current) return

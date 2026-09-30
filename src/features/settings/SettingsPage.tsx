@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { fetchImages } from '../../data/mapillary'
+import { loadLocalIndex, type LocalIndex } from '../../data/osmLocal'
 import { DEFAULT_SETTINGS, type Settings } from '../../domain/types'
 import { db, getSettings, saveSettings } from '../../db'
 import { bboxOf } from '../../lib/geo'
@@ -12,22 +13,26 @@ interface Backup {
   situations: unknown[]
   sessions: unknown[]
   cards: unknown[]
+  signCards?: unknown[]
+  signSessions?: unknown[]
 }
 
 export function SettingsPage() {
   const [s, setS] = useState<Settings | null>(null)
   const [msg, setMsg] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null)
   const [confirmWipe, setConfirmWipe] = useState(false)
+  const [osmIndex, setOsmIndex] = useState<LocalIndex | null | undefined>(undefined)
   const file = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     getSettings().then(setS)
+    loadLocalIndex().then(setOsmIndex)
   }, [])
 
   if (!s) return <p className="muted">Betöltés…</p>
 
   const set = (patch: Partial<Settings>) => setS({ ...s, ...patch })
-  const valid = s.okMs > 0 && s.lateMs > s.okMs && s.timeoutMs > s.lateMs && s.frameMs >= 200
+  const valid = s.okMs > 0 && s.lateMs > s.okMs && s.timeoutMs > s.lateMs && s.approachMs >= 500 && s.signFlashMs >= 200
 
   async function save() {
     if (!valid || !s) {
@@ -58,6 +63,8 @@ export function SettingsPage() {
       situations: await db.situations.toArray(),
       sessions: await db.sessions.toArray(),
       cards: await db.cards.toArray(),
+      signCards: await db.signCards.toArray(),
+      signSessions: await db.signSessions.toArray(),
     }
     const url = URL.createObjectURL(new Blob([JSON.stringify(backup)], { type: 'application/json' }))
     const a = document.createElement('a')
@@ -72,15 +79,18 @@ export function SettingsPage() {
       const b = JSON.parse(await f.text()) as Backup
       if (b.app !== 'kreszpass' || b.version !== 1) throw new Error('Ez nem KreszPass mentés')
       // A dátumok JSON-ból szövegként jönnek vissza
-      const cards = (b.cards as Array<{ card: Record<string, unknown> }>).map((c) => ({
-        ...c,
-        card: { ...c.card, due: new Date(c.card.due as string), last_review: c.card.last_review ? new Date(c.card.last_review as string) : undefined },
-      }))
-      await db.transaction('rw', [db.routes, db.situations, db.sessions, db.cards], async () => {
+      const withDates = (list: unknown[] | undefined) =>
+        ((list ?? []) as Array<{ card: Record<string, unknown> }>).map((c) => ({
+          ...c,
+          card: { ...c.card, due: new Date(c.card.due as string), last_review: c.card.last_review ? new Date(c.card.last_review as string) : undefined },
+        }))
+      await db.transaction('rw', [db.routes, db.situations, db.sessions, db.cards, db.signCards, db.signSessions], async () => {
         await db.routes.bulkPut(b.routes as never[])
         await db.situations.bulkPut(b.situations as never[])
         await db.sessions.bulkPut(b.sessions as never[])
-        await db.cards.bulkPut(cards as never[])
+        await db.cards.bulkPut(withDates(b.cards) as never[])
+        await db.signCards.bulkPut(withDates(b.signCards) as never[])
+        await db.signSessions.bulkPut((b.signSessions ?? []) as never[])
       })
       setMsg({ kind: 'ok', text: `Visszatöltve: ${b.routes.length} útvonal, ${b.sessions.length} munkamenet.` })
     } catch (e) {
@@ -89,7 +99,15 @@ export function SettingsPage() {
   }
 
   async function wipe() {
-    await Promise.all([db.routes.clear(), db.situations.clear(), db.sessions.clear(), db.cards.clear(), db.osmCache.clear()])
+    await Promise.all([
+      db.routes.clear(),
+      db.situations.clear(),
+      db.sessions.clear(),
+      db.cards.clear(),
+      db.osmCache.clear(),
+      db.signCards.clear(),
+      db.signSessions.clear(),
+    ])
     setConfirmWipe(false)
     setMsg({ kind: 'ok', text: 'Minden adat törölve.' })
   }
@@ -126,7 +144,7 @@ export function SettingsPage() {
       </div>
 
       <div className="card">
-        <h2>Időküszöbök</h2>
+        <h2>Időzítés és nézet</h2>
         <p className="hint">
           Ezek döntik el, mikor számít a helyes válasz késésnek (6/4) vagy lassú felismerésnek (6/2). Ahogy gyorsulsz, szigoríts rajtuk.
         </p>
@@ -144,8 +162,21 @@ export function SettingsPage() {
             <input type="number" min={1000} step={500} value={s.timeoutMs} onChange={(e) => set({ timeoutMs: Number(e.target.value) })} />
           </label>
           <label>
-            Utcakép képkocka ideje (ms)
-            <input type="number" min={200} step={100} value={s.frameMs} onChange={(e) => set({ frameMs: Number(e.target.value) })} />
+            Közeledés ideje (ms)
+            <input type="number" min={500} step={250} value={s.approachMs} onChange={(e) => set({ approachMs: Number(e.target.value) })} />
+          </label>
+          <label>
+            Tábla felvillanása (ms)
+            <input type="number" min={200} step={100} value={s.signFlashMs} onChange={(e) => set({ signFlashMs: Number(e.target.value) })} />
+          </label>
+        </div>
+        <div className="toggles">
+          <label className="check">
+            <input type="checkbox" checked={s.view3d} onChange={(e) => set({ view3d: e.target.checked })} /> 3D nézet a vezetőülésből
+            (gyengébb telefonon kikapcsolható)
+          </label>
+          <label className="check">
+            <input type="checkbox" checked={s.terrain} onChange={(e) => set({ terrain: e.target.checked })} /> Domborzat a térképen
           </label>
         </div>
         <div className="actions">
@@ -202,9 +233,28 @@ export function SettingsPage() {
       {msg && <p className={`status ${msg.kind}`}>{msg.text}</p>}
 
       <div className="card">
+        <h2>Helyi térképadatok</h2>
+        {osmIndex === undefined ? (
+          <p className="muted">Betöltés…</p>
+        ) : osmIndex ? (
+          <p className="hint">
+            A helyzetfelismerés az apphoz csomagolt OpenStreetMap-adatokból dolgozik, külső szerver nélkül. Adatok dátuma:{' '}
+            <b>{osmIndex.dataDate.slice(0, 10)}</b>, {osmIndex.tiles.size} csempe, Magyarország teljes területe. Frissítés a
+            fejlesztői gépen: <code>npm run osm</code>, majd új build. {osmIndex.attribution}.
+          </p>
+        ) : (
+          <p className="status warn">
+            Nincs helyi térképadat-csomag, ezért a felismerés a lassabb, nyilvános OpenStreetMap-szerverről tölt. Készítsd el:{' '}
+            <code>npm run osm</code>
+          </p>
+        )}
+      </div>
+
+      <div className="card">
         <h2>Források</h2>
         <p className="hint">
-          Térkép: © OpenStreetMap közreműködők, OpenFreeMap. Útvonaltervezés: OSRM demó szerver. Utcakép: Mapillary (CC BY-SA). Minden
+          Térkép: © OpenStreetMap közreműködők, OpenFreeMap. Helyi útadatok: Geofabrik OSM-kivonat (ODbL). Domborzat: Mapzen Terrarium csempék (AWS Open Data). Útvonaltervezés: OSRM
+          demó szerver. Utcakép: Mapillary (CC BY-SA). KRESZ táblák: Wikimedia Commons, közkincs (PD-HU-exempt). 3D: three.js. Minden
           szolgáltatás ingyenes. Kérjük, ne terheld őket feleslegesen: az OpenStreetMap-lekérdezések eredményét a program két hétig
           helyben tárolja.
         </p>

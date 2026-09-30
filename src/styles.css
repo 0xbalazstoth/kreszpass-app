@@ -328,6 +328,15 @@ label.inline input {
   background: var(--primary-soft);
   color: var(--primary);
 }
+.busy-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.busy-row span {
+  flex: 1;
+}
 .status.busy::before {
   content: '';
   display: inline-block;
@@ -750,6 +759,185 @@ label.inline input {
   margin-left: 6px;
 }
 
+/* ---------------------------------------------------------------- 3D nézet és kis ablak */
+
+.pane {
+  position: absolute;
+  overflow: hidden;
+  background: #0b0d10;
+}
+.pane-main {
+  inset: 0;
+  z-index: 1;
+}
+.pane-inset {
+  right: 12px;
+  bottom: 12px;
+  width: min(36%, 380px);
+  aspect-ratio: 4 / 3;
+  z-index: 3;
+  border-radius: 12px;
+  border: 2px solid rgb(255 255 255 / 85%);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 35%);
+}
+.pane-swap {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 6;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: none;
+  background: rgb(0 0 0 / 55%);
+  color: #fff;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
+.scene3d {
+  position: absolute;
+  inset: 0;
+}
+.scene3d canvas {
+  display: block;
+}
+.cockpit {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 17%;
+  pointer-events: none;
+}
+.drive-flat {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+  background: #d9e8d3;
+}
+.pane-inset .maplibregl-ctrl-attrib {
+  font-size: 9px;
+}
+.hud {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 10px;
+  background: rgb(15 23 42 / 70%);
+  color: #fff;
+  font-weight: 700;
+  pointer-events: none;
+}
+.hud-arrow {
+  font-size: 1.4rem;
+  line-height: 1;
+}
+.hud.turning .hud-arrow {
+  color: #fbbf24;
+  animation: hud-blink 0.8s steps(1) infinite;
+}
+@keyframes hud-blink {
+  50% {
+    opacity: 0.25;
+  }
+}
+.feedback-body {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 10px;
+  align-items: start;
+  margin: 6px 0;
+}
+.feedback-scene {
+  width: 120px;
+}
+
+/* ---------------------------------------------------------------- táblák */
+
+.sign-icon {
+  object-fit: contain;
+  vertical-align: middle;
+  flex: none;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0;
+}
+.sign-group {
+  border-top: 1px solid var(--border);
+  padding: 8px 0;
+}
+.sign-group summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.sign-grid {
+  list-style: none;
+  padding: 0;
+  margin: 10px 0 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: 10px;
+}
+.sign-grid li,
+.sign-grid a {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--text);
+  text-decoration: none;
+}
+.sign-grid.compact {
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+}
+.sign-grid.compact li {
+  flex-direction: row;
+  text-align: left;
+}
+.drill {
+  max-width: 720px;
+  margin: 0 auto;
+}
+.drill .drive-top {
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  margin-bottom: 12px;
+}
+.flash-box {
+  height: min(42dvh, 320px);
+  display: grid;
+  place-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+}
+.flash-sign {
+  /* A doboz magassága rögzített, így a százalék feloldható */
+  height: 82%;
+  width: auto;
+  max-width: 80%;
+  object-fit: contain;
+}
+.flash-hidden {
+  font-size: 5rem;
+  font-weight: 800;
+  color: var(--muted);
+}
+
 /* ---------------------------------------------------------------- minősítő lap */
 
 .sheet-paper {
@@ -971,8 +1159,8 @@ tr.meh td:first-child {
     width: 28px;
   }
   .topbar nav a {
-    padding: 6px 7px;
-    font-size: 0.88rem;
+    padding: 6px 6px;
+    font-size: 0.84rem;
   }
   .drive-map .maplibregl-ctrl-attrib {
     font-size: 9px;
@@ -1006,6 +1194,33 @@ tr.meh td:first-child {
   }
   .drive-scene {
     max-width: 200px;
+  }
+  .drive-grid {
+    grid-template-rows: 44dvh auto;
+  }
+  .pane-inset {
+    width: 40%;
+    right: 8px;
+    bottom: 8px;
+  }
+  .hud {
+    top: 8px;
+    left: 8px;
+    font-size: 0.85rem;
+  }
+}
+
+@media (max-width: 420px) {
+  /* Öt menüpont keskeny telefonon: a logó helyett a menü kapja a helyet */
+  .brand {
+    display: none;
+  }
+  .topbar nav {
+    gap: 0;
+  }
+  .topbar nav a {
+    padding: 6px 5px;
+    font-size: 0.8rem;
   }
 }
 

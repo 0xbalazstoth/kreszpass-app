@@ -1,3 +1,4 @@
+import { signsForScene } from '../data/signs'
 import type { LightState, Scene, SceneCar } from '../domain/questions'
 import { SignGlyph } from './SignIcon'
 
@@ -86,6 +87,7 @@ function turnPath(turn: Scene['turn']): string {
 }
 
 function JunctionScene({ scene }: { scene: Scene }) {
+  const signs = signsForScene(scene)
   const pedTarget = scene.pedestrian?.where === 'target_road'
   const pedX = scene.turn === 'left' ? 92 : 208
   return (
@@ -96,13 +98,13 @@ function JunctionScene({ scene }: { scene: Scene }) {
       <path d="M150 0V110M150 190V300M0 150H110M190 150H300" stroke={MARK} strokeWidth="2" strokeDasharray="12 10" />
       <path d="M150 190H185" stroke={MARK} strokeWidth="4" />
       {pedTarget && <Zebra x={pedX - 8} y={117} w={16} h={66} vertical />}
-      {scene.crossSign && (
-        <>
-          <SignGlyph type={scene.crossSign} x={95} y={205} size={28} />
-          <SignGlyph type={scene.crossSign} x={205} y={95} size={28} />
-        </>
-      )}
-      {scene.mySign && !scene.light && <SignGlyph type={scene.mySign} speed={scene.speed} x={210} y={212} size={36} />}
+      {signs.cross.map((code) => (
+        <g key={code}>
+          <SignGlyph code={code} x={95} y={205} size={28} />
+          <SignGlyph code={code} x={205} y={95} size={28} />
+        </g>
+      ))}
+      {!scene.light && signs.mine.map((code, i) => <SignGlyph key={code} code={code} x={210} y={212 + i * 38} size={36} />)}
       {scene.light && <TrafficLight x={207} y={214} state={scene.light} />}
       {scene.cars.map((c, i) => {
         const p = carPos(c)
@@ -115,6 +117,7 @@ function JunctionScene({ scene }: { scene: Scene }) {
 }
 
 function RoadScene({ scene }: { scene: Scene }) {
+  const signs = signsForScene(scene)
   const ped = scene.pedestrian?.where === 'my_crossing' ? scene.pedestrian : undefined
   const hasZebra = scene.mySign === 'crossing'
   return (
@@ -123,7 +126,9 @@ function RoadScene({ scene }: { scene: Scene }) {
       <path d="M115 0V300M185 0V300" stroke={ROAD_EDGE} strokeWidth="3" />
       <path d="M150 0V300" stroke={MARK} strokeWidth="2" strokeDasharray="12 10" />
       {hasZebra && <Zebra x={117} y={120} w={66} h={22} vertical={false} />}
-      {scene.mySign && <SignGlyph type={scene.mySign} speed={scene.speed} x={215} y={scene.mySign === 'speed' ? 150 : 110} size={scene.mySign === 'speed' ? 56 : 36} />}
+      {signs.mine.map((code) => (
+        <SignGlyph key={code} code={code} x={215} y={scene.mySign === 'speed' ? 150 : 110} size={scene.mySign === 'speed' ? 56 : 36} />
+      ))}
       {scene.blocker && (
         <g aria-label="álló jármű a szomszéd sávban">
           <rect x="120" y="148" width="26" height="62" rx="4" fill="#9ca3af" stroke="#111827" strokeWidth="1.5" />
@@ -136,6 +141,7 @@ function RoadScene({ scene }: { scene: Scene }) {
 }
 
 function RoundaboutScene({ scene }: { scene: Scene }) {
+  const signs = signsForScene(scene)
   const exitPed = scene.pedestrian?.where === 'exit_crossing'
   return (
     <>
@@ -146,7 +152,12 @@ function RoundaboutScene({ scene }: { scene: Scene }) {
       <path d="M150 0V52M150 248V300M0 150H52M248 150H300" stroke={MARK} strokeWidth="2" strokeDasharray="10 8" />
       {exitPed && <Zebra x={117} y={20} w={66} h={18} vertical={false} />}
       <path d="M150 232H185" stroke={MARK} strokeWidth="3" strokeDasharray="6 5" />
-      {scene.mySign && <SignGlyph type={scene.mySign} x={212} y={250} size={34} />}
+      {signs.mine.map((code) => (
+        <SignGlyph key={code} code={code} x={212} y={250} size={34} />
+      ))}
+      {signs.approach.map((code) => (
+        <SignGlyph key={code} code={code} x={212} y={288} size={24} />
+      ))}
       {scene.cars.map((c, i) => (
         <Car key={i} x={c.from === 'left' ? 92 : 208} y={c.from === 'left' ? 196 : 104} rot={c.from === 'left' ? 145 : -35} color="#dc2626" />
       ))}

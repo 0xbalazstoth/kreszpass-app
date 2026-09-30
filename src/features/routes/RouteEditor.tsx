@@ -3,9 +3,11 @@ import type { LineString } from 'geojson'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { MapView, type MapPin } from '../../components/MapView'
 import { SceneView } from '../../components/SceneView'
+import { SignIcon } from '../../components/SignIcon'
 import { approachFrames, fetchSigns, mergeSigns } from '../../data/mapillary'
-import { fetchOsmForRoute } from '../../data/overpass'
+import { loadOsmForRoute } from '../../data/osmSource'
 import { parseTrackFile, snapToRoads } from '../../data/routing'
+import { signForSituation } from '../../data/signs'
 import { generateSituations, placeOnRoute } from '../../data/situations'
 import { allPromptVariants, KIND_LABEL, TURN_LABEL } from '../../domain/questions'
 import type { Route, Situation, SituationKind, Turn } from '../../domain/types'
@@ -42,6 +44,8 @@ export function RouteEditor({ routeId: param }: Props) {
   const [token, setToken] = useState('')
   const [fitKey, setFitKey] = useState('init')
   const fileInput = useRef<HTMLInputElement>(null)
+  const abortRef = useRef<AbortController | null>(null)
+  const [cancellable, setCancellable] = useState(false)
 
   const liveSituations = useLiveQuery(() => situationsOf(routeId), [routeId])
   const situations = useMemo(() => liveSituations ?? [], [liveSituations])
@@ -84,6 +88,7 @@ export function RouteEditor({ routeId: param }: Props) {
         label: String(i + 1),
         color: KIND_COLOR[s.kind],
         selected: s.id === selectedId,
+        sign: signForSituation(s),
       })),
     [situations, selectedId],
   )
@@ -95,9 +100,12 @@ export function RouteEditor({ routeId: param }: Props) {
     try {
       await fn()
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      if (e instanceof DOMException && e.name === 'AbortError') setStatus('Megszakítva. A már letöltött szakaszok megmaradtak.')
+      else setError(e instanceof Error ? e.message : String(e))
     } finally {
       setBusy(null)
+      abortRef.current = null
+      setCancellable(false)
     }
   }
 
@@ -184,15 +192,34 @@ export function RouteEditor({ routeId: param }: Props) {
     })
 
   const onGenerate = () =>
-    run('Helyzetek felismerése az OpenStreetMap-ből…', async () => {
+    run('Térképadatok betöltése…', async () => {
       setConfirmRegen(false)
       const l = await save()
-      const osm = await fetchOsmForRoute(l)
-      const list = generateSituations(l, osm, { routeId })
+      const ctrl = new AbortController()
+      abortRef.current = ctrl
+      setCancellable(true)
+      const loaded = await loadOsmForRoute(l, {
+        signal: ctrl.signal,
+        onProgress: ({ done, total, source, status }) =>
+          setBusy(
+            source === 'local'
+              ? `Helyi térképadatok betöltése${total > 1 ? `: ${Math.min(done, total)}/${total}` : ''}…`
+              : `OpenStreetMap-szerver (a helyi adatokon kívüli rész): ${Math.min(done + 1, total)}/${total}. szakasz…` +
+                  (status ? ` (${status})` : ''),
+          ),
+      })
+      setCancellable(false)
+      setBusy('Helyzetek felismerése…')
+      const list = generateSituations(l, loaded.data, { routeId })
       await replaceSituations(routeId, list)
       setCoverage({})
       const review = list.filter((s) => s.needsReview).length
-      setStatus(`${list.length} helyzet felismerve, ebből ${review} kézi ellenőrzést igényel.`)
+      const source = loaded.remoteChunks
+        ? loaded.localChunks
+          ? 'helyi adatcsomag + OpenStreetMap-szerver'
+          : 'OpenStreetMap-szerver (nincs helyi adat erre a területre)'
+        : `helyi OpenStreetMap-adatcsomag, ${loaded.dataDate?.slice(0, 10) ?? ''}`
+      setStatus(`${list.length} helyzet felismerve, ebből ${review} kézi ellenőrzést igényel. Forrás: ${source}.`)
     })
 
   const onMapillarySigns = () =>
@@ -322,7 +349,7 @@ export function RouteEditor({ routeId: param }: Props) {
         <div className="panel-block">
           <strong>2. Helyzetek</strong>
           <p className="hint">
-            A felismerés az OpenStreetMap táblái, lámpái, zebrái és úttípusai alapján dolgozik. Ahol nincs tábla az adatokban, az
+            A felismerés az apphoz csomagolt, helyi OpenStreetMap-adatokból dolgozik (táblák, lámpák, zebrák, úttípusok). Ahol nincs tábla az adatokban, az
             úttípusból következtet: ezeket <span className="badge warn">ellenőrizendő</span> jelöli. Nézd át őket, és javítsd a valóságnak
             megfelelően.
           </p>
@@ -367,7 +394,16 @@ export function RouteEditor({ routeId: param }: Props) {
           )}
         </div>
 
-        {busy && <p className="status busy">{busy}</p>}
+        {busy && (
+          <div className="status busy busy-row">
+            <span>{busy}</span>
+            {cancellable && (
+              <button className="btn small" onClick={() => abortRef.current?.abort()}>
+                Mégse
+              </button>
+            )}
+          </div>
+        )}
         {status && <p className="status ok">{status}</p>}
         {error && <p className="status error">{error}</p>}
 
@@ -395,6 +431,7 @@ export function RouteEditor({ routeId: param }: Props) {
                       <span className="dot" style={{ background: KIND_COLOR[s.kind] }}>
                         {idx}
                       </span>
+                      <SignIcon code={signForSituation(s)} size={26} />
                       <span className="muted">{formatDistance(s.d)}</span>
                       {s.needsReview && <span className="badge warn">ellenőrizendő</span>}
                       {s.source !== 'osm' && <span className="badge">{s.source === 'manual' ? 'kézi' : 'Mapillary'}</span>}

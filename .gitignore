@@ -25,3 +25,7 @@ dist-ssr
 
 # Böngészős tesztek kimenete
 .playwright-mcp
+
+# Letöltött OSM-kivonat és a belőle generált helyi csempék (npm run osm)
+.cache
+public/osm

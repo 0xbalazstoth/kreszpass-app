@@ -84,3 +84,15 @@ describe('kérdéssablonok', () => {
     expect(orders.size).toBeGreaterThan(1)
   })
 })
+
+describe('kanyarodási kérdés a helyzet táblájával', () => {
+  it('elsőbbségadás kötelező helyzetnél a kanyarodási kérdés vázlatán is ott a tábla', () => {
+    const turn = allPromptVariants(sit('give_way', 'left')).filter((p) => p.id.startsWith('turn:'))
+    expect(turn.length).toBeGreaterThan(0)
+    for (const p of turn) expect(p.scene.mySign).toBe('give_way')
+  })
+  it('lámpás helyzetnél a kanyarodási kérdésen is van lámpa', () => {
+    const turn = allPromptVariants(sit('signals', 'right')).filter((p) => p.id.startsWith('turn:'))
+    for (const p of turn) expect(p.scene.light).toBe('green')
+  })
+})

@@ -2,9 +2,11 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useMemo, useState } from 'react'
 import { MapView, type MapPin } from '../../components/MapView'
 import { EVAL_CODES } from '../../domain/evalCodes'
+import { signForSituation, SIGN_BY_CODE } from '../../data/signs'
+import { SignIcon } from '../../components/SignIcon'
 import { KIND_LABEL } from '../../domain/questions'
 import { evaluateSession } from '../../domain/scoring'
-import type { Attempt } from '../../domain/types'
+import type { Attempt, SignSession } from '../../domain/types'
 import { db } from '../../db'
 import { formatDate, formatDistance, formatSeconds, percent } from '../../lib/format'
 import { href } from '../../lib/router'
@@ -22,6 +24,8 @@ export function StatsPage() {
   const sessions = useLiveQuery(() => db.sessions.orderBy('startedAt').reverse().toArray(), [])
   const routes = useLiveQuery(() => db.routes.toArray(), [])
   const cards = useLiveQuery(() => db.cards.toArray(), [])
+  const signSessions = useLiveQuery(() => db.signSessions.orderBy('startedAt').reverse().limit(50).toArray(), [])
+  const signCards = useLiveQuery(() => db.signCards.toArray(), [])
   const [routeId, setRouteId] = useState<string>('')
   const [selected, setSelected] = useState<string | null>(null)
   const [now] = useState(() => Date.now())
@@ -41,7 +45,7 @@ export function StatsPage() {
     return m
   }, [allAttempts])
 
-  if (!sessions || !routes || !cards) return <p className="muted">Betöltés…</p>
+  if (!sessions || !routes || !cards || !signSessions || !signCards) return <p className="muted">Betöltés…</p>
 
   const exams = sessions.filter((s) => s.mode === 'exam')
   const passed = exams.filter((s) => evaluateSession(s.attempts).passed).length
@@ -58,6 +62,7 @@ export function StatsPage() {
       label: rate === null ? '' : String(Math.round(rate * 100)),
       color: errorColor(rate),
       selected: s.id === selected,
+      sign: signForSituation(s),
     }
   })
   const sel = situations?.find((s) => s.id === selected)
@@ -129,6 +134,8 @@ export function StatsPage() {
           </div>
         )}
       </div>
+
+      <SignStats sessions={signSessions} dueSigns={signCards.filter((c) => new Date(c.card.due).getTime() <= now).length} />
 
       <div className="card">
         <h2>Leggyakoribb hibakódok</h2>
@@ -203,6 +210,48 @@ export function StatsPage() {
         )}
       </div>
     </section>
+  )
+}
+
+function SignStats({ sessions, dueSigns }: { sessions: SignSession[]; dueSigns: number }) {
+  const all = sessions.flatMap((s) => s.results)
+  const missCount = new Map<string, number>()
+  for (const r of all) if (!r.correct) missCount.set(r.code, (missCount.get(r.code) ?? 0) + 1)
+  const worst = [...missCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8)
+  return (
+    <div className="card">
+      <h2>Táblafelismerés</h2>
+      {sessions.length === 0 ? (
+        <p className="muted">
+          Még nem gyakoroltál táblákat. <a href={href('signs')}>Táblák gyakorlása</a>
+        </p>
+      ) : (
+        <>
+          <p className="muted">
+            {sessions.length} kör, {percent(all.filter((r) => r.correct).length, all.length)} helyes, átlagos válaszidő{' '}
+            {formatSeconds(avg(all.filter((r) => r.correct).map((r) => r.reactionMs)))}
+            {dueSigns > 0 && (
+              <>
+                {' · '}
+                <a href={href('signs')}>{dueSigns} esedékes tábla</a>
+              </>
+            )}
+          </p>
+          {worst.length > 0 && (
+            <ul className="sign-grid compact">
+              {worst.map(([code, n]) => (
+                <li key={code}>
+                  <SignIcon code={code} size={48} />
+                  <span>
+                    {SIGN_BY_CODE.get(code)?.name} <b>×{n}</b>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+    </div>
   )
 }
 
