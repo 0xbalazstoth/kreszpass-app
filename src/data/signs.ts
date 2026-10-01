@@ -87,6 +87,7 @@ export interface SceneSigns {
 export const TARGET_ROAD_SIGNS = new Set(['E-012'])
 
 export function signsForScene(scene: Scene): SceneSigns & { target: string[] } {
+  if (scene.roadSign) return { mine: [scene.roadSign], cross: [], approach: [], target: [] }
   const main = scene.mySign ? [signCodeFor(scene.mySign, scene.speed)] : []
   // A helyszínen valóban álló további táblák (OSM), a fő tábla alatt; legfeljebb kettő, hogy olvasható maradjon
   const extra = (scene.extraSigns ?? []).filter((c) => !main.includes(c) && SIGN_BY_CODE.has(c))

@@ -2,11 +2,14 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { createEmptyCard, fsrs, generatorParameters, type Card } from 'ts-fsrs'
 import { SignIcon } from '../../components/SignIcon'
-import { GROUP_LABEL, SIGNS, signUrl, type SignGroup, type SignInfo } from '../../data/signs'
+import { GROUP_LABEL, SIGN_BY_CODE, SIGNS, signUrl, type SignGroup, type SignInfo } from '../../data/signs'
 import { buildSignQuestion, pickDrillSigns, signRating, type SignQuestion } from '../../domain/signQuiz'
 import type { SignResult, SignSession } from '../../domain/types'
 import { db, getSettings } from '../../db'
 import { formatSeconds, percent } from '../../lib/format'
+import { href } from '../../lib/router'
+import { pickRoadDrill, type RoadPlace } from './roadDrill'
+import { RoadSignView } from './RoadSignView'
 
 const scheduler = fsrs(generatorParameters({ enable_fuzz: true, enable_short_term: true }))
 
@@ -14,9 +17,13 @@ const scheduler = fsrs(generatorParameters({ enable_fuzz: true, enable_short_ter
 const FAST_MS = 1500
 const OK_MS = 3500
 const ANSWER_MS = 6000
+/** Az utakon a tábla melletti elhaladás legrövidebb ideje (ms) */
+const ROAD_MIN_MS = 3000
 
 type Phase = 'intro' | 'flash' | 'answer' | 'feedback' | 'done'
 type GroupFilter = SignGroup | 'all'
+/** Táblakép: a tábla felvillan; Az utakon: egy mentett útvonal valódi tábláit látod a helyükön, 3D-ben és a térképen */
+type DrillMode = 'flash' | 'road'
 
 const GROUPS: GroupFilter[] = ['all', ...(Object.keys(GROUP_LABEL) as SignGroup[])]
 
@@ -32,6 +39,17 @@ export function SignDrillPage() {
   const [group, setGroup] = useState<GroupFilter>('all')
   const [count, setCount] = useState(20)
   const [flashMs, setFlashMs] = useState(1200)
+  const [view, setView] = useState({ approachMs: 2500, view3d: true, terrain: true })
+  const [mode, setMode] = useState<DrillMode>('flash')
+  /** A futó kör módja (a fülek váltása nem hat a folyamatban lévő körre) */
+  const [drillMode, setDrillMode] = useState<DrillMode>('flash')
+  const [routeChoice, setRouteChoice] = useState<string>('random')
+  const [places, setPlaces] = useState<RoadPlace[]>([])
+  const [roadStatus, setRoadStatus] = useState<string | null>(null)
+  const [roadError, setRoadError] = useState<string | null>(null)
+  /** Ha kevesebb valódi tábla van, mint amennyit kért: rövid megjegyzés az első táblánál */
+  const [roadNote, setRoadNote] = useState<string | null>(null)
+  const roadAbort = useRef<AbortController | null>(null)
   const [questions, setQuestions] = useState<SignQuestion[]>([])
   const [idx, setIdx] = useState(0)
   const [results, setResults] = useState<SignResult[]>([])
@@ -46,9 +64,17 @@ export function SignDrillPage() {
     return due.map((c) => c.code)
   }, [])
 
+  const routes = useLiveQuery(() => db.routes.orderBy('updatedAt').reverse().toArray(), [])
+
   useEffect(() => {
-    getSettings().then((s) => setFlashMs(s.signFlashMs))
-    return () => window.clearTimeout(autoNext.current)
+    getSettings().then((s) => {
+      setFlashMs(s.signFlashMs)
+      setView({ approachMs: s.approachMs, view3d: s.view3d, terrain: s.terrain })
+    })
+    return () => {
+      window.clearTimeout(autoNext.current)
+      roadAbort.current?.abort()
+    }
   }, [])
 
   const pool = group === 'all' ? SIGNS : SIGNS.filter((s) => s.group === group)
@@ -56,10 +82,52 @@ export function SignDrillPage() {
 
   function start(signs?: SignInfo[]) {
     const list = signs ?? pickDrillSigns(pool, dueCodes ?? [], count)
+    begin(
+      'flash',
+      list.map((sign) => ({ sign })),
+    )
+  }
+
+  /** Az utakon: egy (véletlen) útvonal valódi tábláinak egy véletlen szakasza; újrakezdéskor a megadott helyek */
+  async function startRoad(again?: RoadPlace[]) {
+    if (again) {
+      setRoadNote(null)
+      return begin('road', again.map((p) => ({ sign: SIGN_BY_CODE.get(p.sign.code)!, place: p })))
+    }
+    roadAbort.current?.abort()
+    const ctrl = new AbortController()
+    roadAbort.current = ctrl
+    setRoadError(null)
+    setRoadStatus('Táblák keresése az útvonalon…')
+    try {
+      const { places: found, available } = await pickRoadDrill(routeChoice, count, { signal: ctrl.signal, onStatus: setRoadStatus })
+      if (ctrl.signal.aborted) return
+      setRoadNote(
+        found.length < count
+          ? routeChoice === 'random'
+            ? `A mentett útvonalaidon összesen ${available} valódi táblát találtam (${count} helyett). Több táblához vegyél fel új útvonalat, vagy futtasd az útvonalakon az Újrafelismerést.`
+            : `Ezen az útvonalon ${available} valódi táblát találtam (${count} helyett). Válaszd a „Véletlen útvonal”-at, hogy több útvonalból álljon össze a kör.`
+          : null,
+      )
+      if (!found.length) {
+        setRoadError('Ezen az útvonalon nem találtam valódi táblát. Futtasd a helyzetfelismerést a szerkesztőben, vagy válassz másik útvonalat.')
+        return
+      }
+      begin('road', found.map((p) => ({ sign: SIGN_BY_CODE.get(p.sign.code)!, place: p })))
+    } catch (e) {
+      if (!ctrl.signal.aborted) setRoadError(e instanceof Error ? e.message : String(e))
+    } finally {
+      if (!ctrl.signal.aborted) setRoadStatus(null)
+    }
+  }
+
+  function begin(m: DrillMode, items: Array<{ sign: SignInfo; place?: RoadPlace }>) {
     // Minden táblaképet előre betöltünk, hogy a felvillanás pontos legyen
-    for (const s of list) new Image().src = signUrl(s.code)
+    for (const { sign } of items) new Image().src = signUrl(sign.code)
     // A zavaró válaszok a teljes táblakészletből jönnek, lehetőleg a tábla saját csoportjából
-    setQuestions(list.map((s) => buildSignQuestion(s, SIGNS)))
+    setQuestions(items.map(({ sign }) => buildSignQuestion(sign, SIGNS)))
+    setPlaces(items.flatMap(({ place }) => (place ? [place] : [])))
+    setDrillMode(m)
     setResults([])
     setIdx(0)
     setChosen(null)
@@ -67,15 +135,17 @@ export function SignDrillPage() {
     setPhase('flash')
   }
 
-  // Felvillanás, majd a válaszlehetőségek
+  // Felvillanás (az utakon: elhaladás a tábla mellett), majd a válaszlehetőségek
+  // Az utakon legalább 3 s, hogy a tábla mellett elhaladva el is lehessen olvasni
+  const showMs = drillMode === 'road' ? Math.max(view.approachMs, ROAD_MIN_MS) : flashMs
   useEffect(() => {
     if (phase !== 'flash') return
     const t = window.setTimeout(() => {
       answerStart.current = performance.now()
       setPhase('answer')
-    }, flashMs)
+    }, showMs)
     return () => window.clearTimeout(t)
-  }, [phase, idx, flashMs])
+  }, [phase, idx, showMs])
 
   // Időkorlát a válaszra
   useEffect(() => {
@@ -102,7 +172,13 @@ export function SignDrillPage() {
     window.clearTimeout(autoNext.current)
     setChosen(null)
     if (idx + 1 >= questions.length) {
-      const session: SignSession = { id: crypto.randomUUID(), startedAt: sessionStart.current, finishedAt: Date.now(), group, results: all }
+      const session: SignSession = {
+        id: crypto.randomUUID(),
+        startedAt: sessionStart.current,
+        finishedAt: Date.now(),
+        group: drillMode === 'road' ? 'road' : group,
+        results: all,
+      }
       void db.signSessions.put(session)
       setPhase('done')
       return
@@ -123,7 +199,10 @@ export function SignDrillPage() {
         // Helyes válasz után magától lép tovább; itt csak a hibásnál kell Enter
         e.preventDefault()
         next()
-      } else if (phase === 'intro' && e.key === 'Enter') start()
+      } else if (phase === 'intro' && e.key === 'Enter' && !roadStatus) {
+        if (mode === 'road') void startRoad()
+        else start()
+      }
     }
     addEventListener('keydown', onKey)
     return () => removeEventListener('keydown', onKey)
@@ -132,39 +211,91 @@ export function SignDrillPage() {
   // ------------------------------------------------------------ bevezető és táblatár
   if (phase === 'intro') {
     const dueInPool = (dueCodes ?? []).filter((c) => pool.some((s) => s.code === c)).length
+    const countSelect = (
+      <label className="inline">
+        Táblák száma{' '}
+        <select value={count} onChange={(e) => setCount(Number(e.target.value))}>
+          {[10, 20, 30].map((n) => (
+            <option key={n} value={n}>
+              {n}
+            </option>
+          ))}
+        </select>
+      </label>
+    )
     return (
       <section className="signs">
         <div className="card intro-signs">
           <h1>Táblafelismerés</h1>
-          <p>
-            A tábla {formatSeconds(flashMs)} ideig látszik, utána választod ki a jelentését. Minél gyorsabban, annál jobb: a rosszul vagy
-            lassan felismert táblák hamarabb visszajönnek.
-          </p>
-          <div className="chips" role="radiogroup" aria-label="Táblacsoport">
-            {GROUPS.map((g) => (
-              <button key={g} className={`btn small ${group === g ? 'active' : ''}`} onClick={() => setGroup(g)} role="radio" aria-checked={group === g}>
-                {g === 'all' ? 'Mind' : GROUP_LABEL[g]}
-              </button>
-            ))}
-          </div>
-          <div className="actions">
-            <label className="inline">
-              Táblák száma{' '}
-              <select value={count} onChange={(e) => setCount(Number(e.target.value))}>
-                {[10, 20, 30].map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {dueInPool > 0 && <span className="badge">{dueInPool} esedékes ismétlés</span>}
-          </div>
-          <div className="actions">
-            <button className="btn primary big" onClick={() => start()} autoFocus>
-              Indítás
+          <div className="tabs" role="tablist" aria-label="Gyakorlás módja">
+            <button role="tab" aria-selected={mode === 'flash'} className={`tab ${mode === 'flash' ? 'active' : ''}`} onClick={() => setMode('flash')}>
+              Táblakép
+            </button>
+            <button role="tab" aria-selected={mode === 'road'} className={`tab ${mode === 'road' ? 'active' : ''}`} onClick={() => setMode('road')}>
+              Az utakon
             </button>
           </div>
+          {mode === 'flash' ? (
+            <>
+              <p>
+                A tábla {formatSeconds(flashMs)} ideig látszik, utána választod ki a jelentését. Minél gyorsabban, annál jobb: a rosszul vagy
+                lassan felismert táblák hamarabb visszajönnek.
+              </p>
+              <div className="chips" role="radiogroup" aria-label="Táblacsoport">
+                {GROUPS.map((g) => (
+                  <button key={g} className={`btn small ${group === g ? 'active' : ''}`} onClick={() => setGroup(g)} role="radio" aria-checked={group === g}>
+                    {g === 'all' ? 'Mind' : GROUP_LABEL[g]}
+                  </button>
+                ))}
+              </div>
+              <div className="actions">
+                {countSelect}
+                {dueInPool > 0 && <span className="badge">{dueInPool} esedékes ismétlés</span>}
+              </div>
+              <div className="actions">
+                <button className="btn primary big" onClick={() => start()} autoFocus>
+                  Indítás
+                </button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p>
+                Egy mentett útvonalad valódi tábláit látod a helyükön: a 3D nézetben elhaladsz a tábla mellett, a térkép a valódi helyére
+                repül. Amikor a tábla már mögötted van, választod ki a jelentését. A táblák az OpenStreetMap-adatokból és az útvonal
+                ellenőrzött helyzeteiből jönnek, egy véletlen szakaszon, haladási sorrendben.
+              </p>
+              {routes && routes.length === 0 ? (
+                <p className="hint">
+                  Ehhez előbb vegyél fel egy útvonalat: <a href={href('route/new')}>Új útvonal</a>.
+                </p>
+              ) : (
+                <>
+                  <div className="actions">
+                    <label className="inline">
+                      Útvonal{' '}
+                      <select value={routeChoice} onChange={(e) => setRouteChoice(e.target.value)} disabled={!!roadStatus}>
+                        <option value="random">Véletlen útvonal</option>
+                        {(routes ?? []).map((r) => (
+                          <option key={r.id} value={r.id}>
+                            {r.name || 'Névtelen útvonal'}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    {countSelect}
+                  </div>
+                  <div className="actions">
+                    <button className="btn primary big" onClick={() => void startRoad()} disabled={!!roadStatus} autoFocus>
+                      {roadStatus ? 'Betöltés…' : 'Indítás'}
+                    </button>
+                  </div>
+                  {roadStatus && <p className="muted">{roadStatus}</p>}
+                  {roadError && <p className="status error">{roadError}</p>}
+                </>
+              )}
+            </>
+          )}
         </div>
 
         <div className="card">
@@ -230,11 +361,16 @@ export function SignDrillPage() {
             </>
           )}
           <div className="actions">
-            <button className="btn primary" onClick={() => start()}>
+            <button className="btn primary" onClick={() => (drillMode === 'road' ? void startRoad() : start())}>
               Új kör
             </button>
             {missed.length > 0 && (
-              <button className="btn" onClick={() => start(missed)}>
+              <button
+                className="btn"
+                onClick={() =>
+                  drillMode === 'road' ? void startRoad(places.filter((p) => missed.some((m) => m.code === p.sign.code))) : start(missed)
+                }
+              >
                 Csak a hibásak
               </button>
             )}
@@ -250,63 +386,98 @@ export function SignDrillPage() {
   // ------------------------------------------------------------ gyakorlás
   if (!q) return null
   const showSign = phase === 'flash' || phase === 'feedback'
+  const place = drillMode === 'road' ? places[idx] : undefined
+  const header = (
+    <header className="drive-top">
+      <span className="badge">{place ? 'Táblák az utakon' : 'Táblák'}</span>
+      <span className="muted">
+        {idx + 1} / {questions.length}
+      </span>
+      <div className="progress" aria-hidden>
+        <div style={{ width: `${(idx / questions.length) * 100}%` }} />
+      </div>
+      <button className="btn small ghost" onClick={() => setPhase('intro')}>
+        Kilépés
+      </button>
+    </header>
+  )
+  const questionBlock = phase !== 'flash' && (
+    <div className="question">
+      {phase === 'answer' && (
+        <div
+          className="timer"
+          key={idx}
+          aria-hidden
+          style={{ '--ok': `${(FAST_MS / ANSWER_MS) * 100}%`, '--late': `${(OK_MS / ANSWER_MS) * 100}%` } as CSSProperties}
+        >
+          <div className="timer-fill" style={{ animationDuration: `${ANSWER_MS}ms` }} />
+        </div>
+      )}
+      {place && phase === 'answer' && <p className="prompt">Milyen táblát láttál?</p>}
+      <ol className="options">
+        {q.options.map((o, i) => {
+          const reveal = phase === 'feedback'
+          const cls = reveal ? (i === q.correct ? 'correct' : chosen === i ? 'wrong' : '') : ''
+          return (
+            <li key={o}>
+              <button className={`option ${cls}`} onClick={() => answer(i)} disabled={phase !== 'answer'}>
+                <span className="key">{i + 1}</span>
+                <span>{o}</span>
+              </button>
+            </li>
+          )
+        })}
+      </ol>
+      {phase === 'feedback' && place && (
+        <div className="road-answer">
+          <img src={signUrl(q.target.code)} alt="" />
+          <span>{q.target.name}</span>
+        </div>
+      )}
+      {phase === 'feedback' && chosen !== q.correct && (
+        <div className="feedback bad">
+          <strong>{chosen === null ? 'Lejárt az idő' : 'Nem ez'}</strong>
+          <p>
+            Ez a tábla: <b>{q.target.name}</b>
+          </p>
+          <button className="btn primary" onClick={() => next()} autoFocus>
+            Tovább (Enter)
+          </button>
+        </div>
+      )}
+    </div>
+  )
+
+  if (place) {
+    return (
+      <section className="drive road-drill">
+        {header}
+        <div className="drive-grid">
+          <RoadSignView
+            key={idx}
+            place={place}
+            phase={phase === 'flash' ? 'flash' : phase === 'answer' ? 'answer' : 'feedback'}
+            {...view}
+            approachMs={showMs}
+          />
+          <div className="drive-side">
+            {phase === 'flash' && <p className="approaching">Figyeld a táblát!</p>}
+            {idx === 0 && roadNote && <p className="status warn">{roadNote}</p>}
+            {questionBlock}
+          </div>
+        </div>
+      </section>
+    )
+  }
+
   return (
     <section className="signs drill">
-      <header className="drive-top">
-        <span className="badge">Táblák</span>
-        <span className="muted">
-          {idx + 1} / {questions.length}
-        </span>
-        <div className="progress" aria-hidden>
-          <div style={{ width: `${(idx / questions.length) * 100}%` }} />
-        </div>
-        <button className="btn small ghost" onClick={() => setPhase('intro')}>
-          Kilépés
-        </button>
-      </header>
+      {header}
       <div className="flash-box">
         {showSign ? <img src={signUrl(q.target.code)} alt="" className="flash-sign" /> : <span className="flash-hidden">?</span>}
       </div>
       {phase === 'flash' && <p className="approaching">Figyelj!</p>}
-      {phase !== 'flash' && (
-        <div className="question">
-          {phase === 'answer' && (
-            <div
-              className="timer"
-              key={idx}
-              aria-hidden
-              style={{ '--ok': `${(FAST_MS / ANSWER_MS) * 100}%`, '--late': `${(OK_MS / ANSWER_MS) * 100}%` } as CSSProperties}
-            >
-              <div className="timer-fill" style={{ animationDuration: `${ANSWER_MS}ms` }} />
-            </div>
-          )}
-          <ol className="options">
-            {q.options.map((o, i) => {
-              const reveal = phase === 'feedback'
-              const cls = reveal ? (i === q.correct ? 'correct' : chosen === i ? 'wrong' : '') : ''
-              return (
-                <li key={o}>
-                  <button className={`option ${cls}`} onClick={() => answer(i)} disabled={phase !== 'answer'}>
-                    <span className="key">{i + 1}</span>
-                    <span>{o}</span>
-                  </button>
-                </li>
-              )
-            })}
-          </ol>
-          {phase === 'feedback' && chosen !== q.correct && (
-            <div className="feedback bad">
-              <strong>{chosen === null ? 'Lejárt az idő' : 'Nem ez'}</strong>
-              <p>
-                Ez a tábla: <b>{q.target.name}</b>
-              </p>
-              <button className="btn primary" onClick={() => next()} autoFocus>
-                Tovább (Enter)
-              </button>
-            </div>
-          )}
-        </div>
-      )}
+      {questionBlock}
     </section>
   )
 }

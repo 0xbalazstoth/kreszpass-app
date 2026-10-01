@@ -56,6 +56,8 @@ export interface Scene {
    */
   roundabout?: { exits: number; exit: number; lanes: number; phase: 'entry' | 'exit'; partner?: 'ring_car' | 'outer_car' | 'entry_waiting' }
   hazard?: HazardKind
+  /** Táblagyakorlás az utakon: egyetlen valódi tábla oszlopon, a jobb oldalon, amely mellett elhaladunk */
+  roadSign?: string
   transit?: { kind: 'tram' | 'bus'; island: boolean; state: TransitState }
 }
 

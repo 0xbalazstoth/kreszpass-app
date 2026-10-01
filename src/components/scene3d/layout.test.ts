@@ -309,3 +309,19 @@ describe('3D elrendezés – megállók és váratlan helyzetek', () => {
     expect(train.move!.to[0]).toBeGreaterThan(0)
   })
 })
+
+describe('3D elrendezés – táblagyakorlás az utakon', () => {
+  it('a tábla a jobb oldalon áll, felénk néz, és a kérdés idejére a vezető mögött van', () => {
+    const l = buildLayout({ layout: 'road', turn: 'straight', cars: [], roadSign: 'C-002' })
+    const post = l.signs.find((s) => s.codes.includes('C-002'))!
+    expect(post.x).toBeGreaterThan(HALF)
+    expect(post.rotY).toBe(0)
+    expect(l.camera.startZ).toBeGreaterThan(post.z)
+    // A kamera a −Z felé halad: a megállási pont a tábla után van, így semmilyen képaránynál nem látszik
+    expect(l.camera.stopZ).toBeLessThan(post.z)
+    expect(l.lookYaw).toBe(0)
+    // Egyenletes tempó: a tábla a közeledés nagyobb részében olvasható közelségben van
+    expect(l.camera.steady).toBe(true)
+    expect(l.camera.startZ).toBeLessThanOrEqual(45)
+  })
+})

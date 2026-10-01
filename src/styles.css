@@ -1100,6 +1100,67 @@ kbd {
   border: 1px solid var(--border);
   margin-bottom: 12px;
 }
+/* Táblafelismerés: módváltó fülek (Táblakép / Az utakon) */
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin: 4px 0 12px;
+  border-bottom: 1px solid var(--border);
+}
+.tab {
+  font: inherit;
+  font-weight: 700;
+  padding: 8px 14px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.tab.active {
+  color: var(--primary);
+  border-bottom-color: var(--primary);
+}
+/* Az utakon: a keskeny táblaoldalon belül is teljes szélességű vezetési nézet, a fejléc alatt */
+.drive.road-drill {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: calc(var(--topbar-h) + env(safe-area-inset-top, 0px));
+  height: auto;
+  z-index: 20;
+  background: var(--bg);
+}
+/* Az utakon: a tábla helye (útvonal, távolság) a nézet alján */
+.road-place {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  z-index: 4;
+  margin: 0;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: rgb(15 23 42 / 70%);
+  color: #fff;
+  font-size: 0.85rem;
+  pointer-events: none;
+}
+.question .prompt {
+  font-weight: 700;
+  margin: 0 0 10px;
+}
+.road-answer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  font-weight: 700;
+}
+.road-answer img {
+  height: 64px;
+  width: auto;
+}
 .flash-box {
   height: min(42dvh, 320px);
   display: grid;
@@ -1327,6 +1388,242 @@ tr.meh td:first-child {
 }
 
 /* ---------------------------------------------------------------- mobil */
+
+/* ---------------------------------------------------------------- Manőverek */
+.maneuvers {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.maneuver-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+}
+.maneuver-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  height: 100%;
+  color: inherit;
+  text-decoration: none;
+}
+.maneuver-card h2 {
+  font-size: 1rem;
+  margin: 0;
+}
+.maneuver-card p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.maneuver-card .badge {
+  align-self: flex-start;
+  margin-left: 0;
+}
+.maneuver-card:hover {
+  border-color: var(--primary);
+}
+.maneuver-thumb {
+  width: 100%;
+  height: 170px;
+  border-radius: 8px;
+  background: #cfe3c6;
+}
+.maneuver-diagram {
+  display: block;
+}
+.maneuver-live {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: #cfe3c6;
+}
+/* A felülnézet a 3D nézet jobb felső sarkában: alul a két külső tükör képe van */
+.maneuver-page .pane-inset {
+  top: 12px;
+  bottom: auto;
+}
+.maneuver-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 45%;
+}
+.maneuver-side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.maneuver-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+.maneuver-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.maneuver-status .badge {
+  margin-left: 0;
+}
+.maneuver-status .gear {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  font-weight: 800;
+  font-size: 1.1rem;
+}
+.maneuver-status .gear.rev {
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+.maneuver-status .steer {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+.steer-icon {
+  width: 30px;
+  height: 30px;
+  color: var(--text);
+  transition: transform 0.3s;
+}
+.maneuver-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.maneuver-steps > li {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.maneuver-steps > li.active {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary);
+}
+.maneuver-steps > li.done .step-head {
+  color: var(--muted);
+}
+.step-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+}
+.step-no {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  font-size: 0.8rem;
+}
+.maneuver-steps > li.active .step-no {
+  background: var(--primary);
+  color: #fff;
+}
+.step-body {
+  padding: 0 14px 12px 46px;
+}
+.step-body ol {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.step-body .cue {
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--warn-soft);
+  font-weight: 600;
+}
+.step-body .mistakes {
+  margin-top: 10px;
+  font-size: 0.88rem;
+}
+.step-body .mistakes ul,
+.exam-box ul {
+  margin: 4px 0 0;
+  padding-left: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.exam-box h2 {
+  font-size: 1rem;
+  margin: 0 0 6px;
+}
+.exam-box {
+  font-size: 0.9rem;
+}
+/* 3D: a tükrök kerete (a képet a jelenet rajzolja ugyanide), a kért tükör kiemelve */
+.mirror-frame {
+  position: absolute;
+  z-index: 3;
+  border: 4px solid #111827;
+  border-radius: 12px;
+  pointer-events: none;
+  box-sizing: border-box;
+}
+.mirror-frame.active {
+  border-color: #f59e0b;
+  box-shadow: 0 0 0 3px rgb(245 158 11 / 45%);
+}
+.look-back {
+  position: absolute;
+  top: 12px;
+  left: 68px;
+  z-index: 4;
+  padding: 6px 14px;
+  border-radius: 10px;
+  background: rgb(15 23 42 / 75%);
+  color: #fff;
+  font-weight: 700;
+}
+.gear-badge {
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  z-index: 4;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: #b91c1c;
+  color: #fff;
+  font-size: 1.4rem;
+  font-weight: 800;
+}
 
 @media (max-width: 860px) {
   .topbar {

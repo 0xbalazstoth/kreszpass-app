@@ -1,5 +1,7 @@
 import { DrivePage } from './features/drive/DrivePage'
 import { ExamSheet } from './features/exam-sheet/ExamSheet'
+import { ManeuverPage } from './features/maneuvers/ManeuverPage'
+import { ManeuversPage } from './features/maneuvers/ManeuversPage'
 import { RouteEditor } from './features/routes/RouteEditor'
 import { RoutesPage } from './features/routes/RoutesPage'
 import { SettingsPage } from './features/settings/SettingsPage'
@@ -12,6 +14,7 @@ const NAV = [
   { path: '', label: 'Útvonalak', match: ['', 'route', 'drive', 'sheet'] },
   { path: 'review', label: 'Ismétlés', match: ['review'] },
   { path: 'signs', label: 'Táblák', match: ['signs'] },
+  { path: 'maneuvers', label: 'Manőverek', match: ['maneuvers'] },
   { path: 'stats', label: 'Statisztika', match: ['stats'] },
   { path: 'settings', label: 'Beállítások', match: ['settings'] },
 ]
@@ -19,7 +22,7 @@ const NAV = [
 export default function App() {
   const { parts, query } = useHashRoute()
   const [page = '', arg] = parts
-  const fullBleed = page === 'route' || page === 'drive' || page === 'review'
+  const fullBleed = page === 'route' || page === 'drive' || page === 'review' || (page === 'maneuvers' && !!arg)
 
   let content
   switch (page) {
@@ -44,6 +47,9 @@ export default function App() {
       break
     case 'signs':
       content = <SignDrillPage />
+      break
+    case 'maneuvers':
+      content = arg ? <ManeuverPage key={arg} id={arg} /> : <ManeuversPage />
       break
     case 'stats':
       content = <StatsPage />

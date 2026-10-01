@@ -41,6 +41,13 @@ Minden felhasznált csomag nyílt forráskódú, minden szolgáltatás ingyenes,
     vagy anélkül, útépítés, a parkoló autók közül kiguruló labda, kinyíló ajtó, kerékpáros, hátulról érkező mentőautó
     (visszapillantó tükörrel és szirénával). Ugyanazon az útvonalon mindig ugyanott vannak, de hogy mi történik, változik.
 
+**Manőverek.** A vizsga hét manővere (M1–M7: 90°-os beállás előre jobbra/balra és kiállás, 90°-os beállás hátra,
+párhuzamos parkolás előre- és hátramenetben, „Y” és „U” megfordulás) lépésről lépésre: mikor, merre és mennyit kell
+kormányozni, melyik sebességfokozatban, hová nézz, mihez igazodj, és milyen hibakódot kockáztatsz. A mozdulatok egy átlagos
+kisautó valós méreteivel és fordulókörével vannak kiszámolva: a felülnézeti rajz és a vezetőülésből látott 3D nézet
+(a tükrök képével) ugyanazt mutatja, és a tesztek ellenőrzik, hogy a kocsi a helyén áll meg, sehol nem ér a parkoló
+autókhoz, a kereke a szegélyhez, és a leírt referenciapontok (pl. „a jobb hátsó kerék a második vonalnál”) stimmelnek.
+
 Billentyűzettel az 1–4 gombok választanak, az Enter továbblép. Bekapcsolható a kérdések felolvasása és a
 hangos válasz (a sorszám kimondásával), ha a böngésző támogatja.
 
@@ -51,8 +58,12 @@ hangos válasz (a sorszám kimondásával), ha a böngésző támogatja.
   stopvonal előtt jön, amikor dönteni kell, és a vezető a partner felé fordítja a fejét.
 - **3D térképes repülés.** A kis ablakban a térkép az igazi útvonaladon repül végig 3D épületekkel és domborzattal,
   a helyzetek pontján a valódi táblával. A ⤢ gombbal a két nézet felcserélhető.
-- **Táblafelismerés.** A *Táblák* menüben a tábla egy pillanatra felvillan, utána kell kiválasztani a jelentését.
-  A rosszul vagy lassan felismert táblák ismétlésre visszajönnek. Itt található a táblatár is.
+- **Táblafelismerés.** A *Táblák* menüben két mód van. *Táblakép*: a tábla egy pillanatra felvillan, utána kell kiválasztani
+  a jelentését. *Az utakon*: egy (véletlen) mentett útvonalad valódi tábláit látod a helyükön: a 3D nézetben elhaladsz
+  a tábla mellett, a térkép a valódi helyére repül, és amikor a tábla már mögötted van, választod ki a jelentését.
+  A táblák az OpenStreetMap-ben kitáblázott táblákból és az útvonal ellenőrzött helyzeteiből jönnek, egy véletlen
+  szakaszon, haladási sorrendben. Mindkét mód ugyanabba az ismétlésbe számít: a rosszul vagy lassan felismert táblák
+  visszajönnek. Itt található a táblatár is.
 - **Valós táblák a helyszínen.** A kérdés fő tábláján felül a helyszínen ténylegesen álló táblák is megjelennek a 3D nézetben
   és a térképen: az OpenStreetMap-ben kitáblázott jelzőtáblák (pl. sebességkorlátozás, lakott terület), a főútvonal, és
   egyirányú utcába kanyarodva az „Egyirányú forgalmú út” tábla. A szerkesztő listája is mutatja őket.

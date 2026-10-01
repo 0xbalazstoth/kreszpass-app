@@ -31,7 +31,7 @@ function Flat({ r, y, color }: { r: Rect; y: number; color: string }) {
   )
 }
 
-export function Ground({ layout }: { layout: Layout3D }) {
+export function Ground({ layout }: { layout: Pick<Layout3D, 'asphalt' | 'sidewalks' | 'markings' | 'ring'> }) {
   return (
     <group>
       <mesh position={[0, -0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
@@ -686,7 +686,7 @@ export function Pedestrian({ ped, clock, index }: { ped: Ped3D; clock: Clock; in
 // ---------------------------------------------------------------- saját autó és kamera
 
 export function DriverCamera({ layout, clock }: { layout: Layout3D; clock: Clock }) {
-  const { x, y, startZ, stopZ, arc } = layout.camera
+  const { x, y, startZ, stopZ, arc, steady } = layout.camera
   useFrame(({ camera }) => {
     const t = clock.progress()
     const yawNow = layout.lookYaw * easeOut(clock.sinceStop() / 0.9)
@@ -700,7 +700,7 @@ export function DriverCamera({ layout, clock }: { layout: Layout3D; clock: Clock
       camera.lookAt(px - Math.sin(h) * 30, 1.05, pz - Math.cos(h) * 30)
       return
     }
-    const z = startZ + (stopZ - startZ) * easeOut(t)
+    const z = startZ + (stopZ - startZ) * (steady ? t : easeOut(t))
     camera.position.set(x, y, z)
     // Megállás után a vezető a partner (vagy a kanyarodás) irányába fordítja a fejét
     const yaw = layout.lookYaw * easeOut(clock.sinceStop() / 0.9)

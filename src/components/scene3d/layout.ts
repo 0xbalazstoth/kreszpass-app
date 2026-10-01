@@ -145,7 +145,15 @@ export interface Layout3D {
    * A kamera útja: egyenesen a startZ-ből a stopZ-be, vagy (körforgalomban) íven: a körpálya közepétől r sugárban,
    * a0 → a1 szögig (radián, az óramutatóval ellentétesen). Az íven a kamera a menetirányba néz.
    */
-  camera: { x: number; y: number; startZ: number; stopZ: number; arc?: { r: number; a0: number; a1: number } }
+  camera: {
+    x: number
+    y: number
+    startZ: number
+    stopZ: number
+    arc?: { r: number; a0: number; a1: number }
+    /** Egyenletes sebesség (lassulás nélkül): táblagyakorlásnál, hogy a tábla végig egyformán látszódjon */
+    steady?: boolean
+  }
   /** Megállás után a vezető ennyit fordítja a fejét (radián, + = balra), hogy lássa a partnert */
   lookYaw: number
   turn: Turn
@@ -285,7 +293,7 @@ function buildRaw(scene: Scene): Layout3D {
     }
   }
 
-  if (scene.layout === 'road' && (scene.hazard || scene.transit)) return streetLayout(scene, rng, signs, carColor, L)
+  if (scene.layout === 'road' && (scene.hazard || scene.transit || scene.roadSign)) return streetLayout(scene, rng, signs, carColor, L)
 
   if (scene.layout === 'road') {
     const oneWayTwoLanes = !!scene.blocker
@@ -700,6 +708,14 @@ function streetLayout(scene: Scene, rng: () => number, signs: SceneSignsFull, ca
     posts.push({ codes: signs.mine, x: HALF + 3.4, z: -1.8, rotY: 0, size: 0.9 })
   }
 
+  if (scene.roadSign) {
+    // Táblagyakorlás: a tábla a jobb oldali járdán áll. A kamera (lassulva) épp elhalad mellette: a kérdésnél a tábla
+    // már a vezető mögött van, így széles képernyőn (nagy vízszintes látószögnél) sem látszik
+    posts.push({ codes: signs.mine, x: rightEdge + 1.2, z: 0, rotY: 0, size: 1.0 })
+    oncoming([0.3 + rng() * 1.5, 3 + rng() * 3])
+    stopZ = -2
+  }
+
   for (const code of signs.approach) posts.push({ codes: [code], x: rightEdge + 1.2, z: 38, rotY: 0, size: 1.0 })
 
   const offset = SIDEWALK + 3.5
@@ -719,7 +735,8 @@ function streetLayout(scene: Scene, rng: () => number, signs: SceneSignsFull, ca
       { axis: 'z', from: L, to: -L, offset: rightEdge + (bay ? 3 : 0) + offset },
       { axis: 'z', from: L, to: -L, offset: leftEdge - offset },
     ]),
-    camera: { x: camX, y: 1.25, startZ: 62, stopZ },
+    // Táblagyakorlásnál közelebbről, egyenletes tempóban indul: a tábla kb. 30 m-től az elhaladásig olvasható
+    camera: scene.roadSign ? { x: camX, y: 1.25, startZ: 40, stopZ, steady: true } : { x: camX, y: 1.25, startZ: 62, stopZ },
     lookYaw: 0,
     turn: 'straight',
   }
@@ -763,8 +780,9 @@ function frameYaw(l: Layout3D): number {
 
 export function buildLayout(scene: Scene): Layout3D {
   const raw = buildRaw(scene)
-  // Íven haladva a fejfordítást a körforgalom elrendezése adja meg
-  return raw.camera.arc ? raw : { ...raw, lookYaw: frameYaw(raw) }
+  // Íven haladva a fejfordítást a körforgalom elrendezése adja meg. Táblagyakorlásnál a vezető nem fordul a tábla felé:
+  // a kérdésnél már nem szabad látszania
+  return raw.camera.arc || scene.roadSign ? raw : { ...raw, lookYaw: frameYaw(raw) }
 }
 
 /** Közeledés: lassuló mozgás (ease-out), 0..1 */

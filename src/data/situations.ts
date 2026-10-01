@@ -101,6 +101,82 @@ function isOneway(w: OsmWay | undefined): boolean {
   return v === 'yes' || v === '1' || v === 'true' || isRoundaboutWay(w)
 }
 
+/** Pontok és (járható) utak szétválogatása, az utak befoglaló téglalapjával */
+function prepareOsm(osm: OsmData): { nodes: OsmNode[]; ways: PreparedWay[] } {
+  const nodes: OsmNode[] = []
+  const ways: PreparedWay[] = []
+  for (const el of osm.elements) {
+    if (el.type === 'node') nodes.push(el)
+    else if (el.type === 'way' && el.geometry?.length >= 2 && isDrivableWay(el)) {
+      const coords = el.geometry.map((g) => [g.lon, g.lat])
+      ways.push({ way: el, coords, bbox: bboxOf(coords, WAY_SNAP + 5) })
+    }
+  }
+  return { nodes, ways }
+}
+
+/** Mintavétel 10 méterenként: melyik OSM-út van alattunk (a haladási irányhoz illő, legközelebbi) */
+function sampleRouteWays(geom: RouteGeom, ways: PreparedWay[]): Sample[] {
+  const samples: Sample[] = []
+  for (let d = 0; d <= geom.length; d += STEP) {
+    const p = geom.pointAt(d)
+    const b = geom.bearingAt(d)
+    let best: { way: OsmWay; score: number } | undefined
+    for (const pw of ways) {
+      if (!bboxContains(pw.bbox, p)) continue
+      const seg = nearestSegment(p, pw.coords)
+      if (seg.dist > WAY_SNAP) continue
+      let a = angleDiff(b, seg.bearing)
+      a = Math.min(a, 180 - a)
+      const score = seg.dist + (a > 50 ? 20 : 0)
+      if (!best || score < best.score) best = { way: pw.way, score }
+    }
+    samples.push({ d, p, way: best?.way })
+  }
+  return samples
+}
+
+function wayAtOf(samples: Sample[]): (d: number) => OsmWay | undefined {
+  return (d) => samples[Math.max(0, Math.min(samples.length - 1, Math.round(d / STEP)))]?.way
+}
+
+/** Egy kitáblázott tábla az útvonal mentén */
+export interface SignSpot {
+  code: string
+  /** Távolság az útvonal elejétől (m) */
+  d: number
+  lngLat: LngLat
+}
+
+/**
+ * A kitáblázott (OSM traffic_sign) táblák az útvonal mentén, amelyek a mi irányunkra vonatkoznak: az úttesten lévő (≤ 2 m)
+ * pont bármelyik irányra vonatkozhat, a távolabbiak közül csak a jobb oldaliak a mieink. A „lakott terület” tábla
+ * kezdete/vége a sebességkorlát változásából derül ki.
+ */
+function signSpots(nodes: OsmNode[], geom: RouteGeom, wayAt: (d: number) => OsmWay | undefined): SignSpot[] {
+  const out: SignSpot[] = []
+  for (const n of nodes) {
+    const codes = parseTrafficSign(n.tags)
+    if (!codes.length) continue
+    const p: LngLat = [n.lon, n.lat]
+    const pr = geom.project(p)
+    if (pr.dist > SIGN_SNAP) continue
+    if (pr.dist > 2 && sideOf(geom, pr.d, p) < 0) continue
+    for (const c of codes) {
+      const code = c === 'city_limit' ? cityLimitCode(wayAt(pr.d - 30), wayAt(pr.d + 30)) : c
+      out.push({ code, d: pr.d, lngLat: p })
+    }
+  }
+  return out.sort((a, b) => a.d - b.d)
+}
+
+/** Az útvonal mentén kitáblázott, a mi irányunkra vonatkozó táblák (a táblagyakorláshoz) */
+export function signsAlongRoute(line: LineString, osm: OsmData): SignSpot[] {
+  const geom = new RouteGeom(line)
+  const { nodes, ways } = prepareOsm(osm)
+  return signSpots(nodes, geom, wayAtOf(sampleRouteWays(geom, ways)))
+}
+
 /**
  * Helyzetek (kereszteződések, zebrák, lámpák, körforgalmak, sebességváltozások)
  * felismerése az útvonal mentén az OpenStreetMap-adatokból.
@@ -111,15 +187,7 @@ export function generateSituations(line: LineString, osm: OsmData, opts: Generat
   const geom = new RouteGeom(line)
   const L = geom.length
 
-  const nodes: OsmNode[] = []
-  const ways: PreparedWay[] = []
-  for (const el of osm.elements) {
-    if (el.type === 'node') nodes.push(el)
-    else if (el.type === 'way' && el.geometry?.length >= 2 && isDrivableWay(el)) {
-      const coords = el.geometry.map((g) => [g.lon, g.lat])
-      ways.push({ way: el, coords, bbox: bboxOf(coords, WAY_SNAP + 5) })
-    }
-  }
+  const { nodes, ways } = prepareOsm(osm)
 
   // Csomópontok fokszáma és a hozzájuk tartozó utak
   const degree = new Map<number, number>()
@@ -138,23 +206,8 @@ export function generateSituations(line: LineString, osm: OsmData, opts: Generat
   }
 
   // Mintavétel: melyik OSM-út van alattunk
-  const samples: Sample[] = []
-  for (let d = 0; d <= L; d += STEP) {
-    const p = geom.pointAt(d)
-    const b = geom.bearingAt(d)
-    let best: { way: OsmWay; score: number } | undefined
-    for (const pw of ways) {
-      if (!bboxContains(pw.bbox, p)) continue
-      const seg = nearestSegment(p, pw.coords)
-      if (seg.dist > WAY_SNAP) continue
-      let a = angleDiff(b, seg.bearing)
-      a = Math.min(a, 180 - a)
-      const score = seg.dist + (a > 50 ? 20 : 0)
-      if (!best || score < best.score) best = { way: pw.way, score }
-    }
-    samples.push({ d, p, way: best?.way })
-  }
-  const wayAt = (d: number): OsmWay | undefined => samples[Math.max(0, Math.min(samples.length - 1, Math.round(d / STEP)))]?.way
+  const samples = sampleRouteWays(geom, ways)
+  const wayAt = wayAtOf(samples)
   const onRoute = new Set(samples.flatMap((s) => (s.way ? [s.way.id] : [])))
 
   const out: Situation[] = []
@@ -429,22 +482,12 @@ export function generateSituations(line: LineString, osm: OsmData, opts: Generat
  * valamint az adatokból biztosan levezethetők (főútvonal, egyirányú célút).
  */
 function attachRealSigns(list: Situation[], nodes: OsmNode[], geom: RouteGeom, wayAt: (d: number) => OsmWay | undefined) {
-  const signNodes = nodes
-    .map((n) => ({ n, codes: parseTrafficSign(n.tags) }))
-    .filter((x) => x.codes.length)
-    .map((x) => ({ ...x, pr: geom.project([x.n.lon, x.n.lat]) }))
-    .filter((x) => x.pr.dist <= SIGN_SNAP)
+  const spots = signSpots(nodes, geom, wayAt)
   list.forEach((s, i) => {
     const codes: string[] = []
     const from = Math.max(s.d - SIGN_BEFORE, i > 0 ? list[i - 1].d + 5 : 0)
-    for (const x of signNodes) {
-      if (x.pr.d < from || x.pr.d > s.d + 5) continue
-      // Az úttesten lévő (≤ 2 m) pont bármelyik irányra vonatkozhat; a távolabbiak közül csak a jobb oldaliak a mieink
-      if (x.pr.dist > 2 && sideOf(geom, x.pr.d, [x.n.lon, x.n.lat]) < 0) continue
-      for (const c of x.codes) {
-        const code = c === 'city_limit' ? cityLimitCode(wayAt(x.pr.d - 30), wayAt(x.pr.d + 30)) : c
-        if (!codes.includes(code)) codes.push(code)
-      }
+    for (const x of spots) {
+      if (x.d >= from && x.d <= s.d + 5 && !codes.includes(x.code)) codes.push(x.code)
     }
     const approach = wayAt(s.d - 15)
     if (s.kind === 'priority' && isYesish(approach?.tags?.priority_road) && !codes.includes('B-003')) codes.push('B-003')

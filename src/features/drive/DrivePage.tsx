@@ -15,8 +15,8 @@ import { classifyAnswer } from '../../domain/scoring'
 import type { Attempt, ExamSession, Mode, Route, Settings, Situation } from '../../domain/types'
 import { db, getSettings, saveSettings, situationsOf } from '../../db'
 import { formatSeconds } from '../../lib/format'
-import { RouteGeom, type LngLat } from '../../lib/geo'
 import { href, navigate } from '../../lib/router'
+import { flyPath } from './fly'
 import { sceneMapPins } from './mapSigns'
 import { dueSituations, recordReview, worstOutcome } from './review'
 import { speak, stopSpeaking, useVoiceAnswers, voiceSupported } from './speech'
@@ -67,23 +67,9 @@ function approachPlan(step: Step, prevD: number | null, settings: Settings, mode
   return { fromD, durationMs }
 }
 
-/** Első személyű kamera-út a térképen (alapból a helyzet előtti 150 m), 5 méterenként */
+/** Első személyű kamera-út a térképen: alapból a helyzet előtti 150 m, a megállási pontig */
 function flyPathFor(line: LineString, s: Situation, durationMs: number, fromD = s.d - 150): FlyAlong | null {
-  try {
-    const geom = new RouteGeom(line)
-    const end = Math.max(0, s.d - STOP_BEFORE_M)
-    const begin = Math.max(0, Math.min(fromD, end - 10))
-    if (end - begin < 10) return null
-    const path: LngLat[] = []
-    const bearings: number[] = []
-    for (let d = begin; d <= end; d += 5) {
-      path.push(geom.pointAt(d))
-      bearings.push(geom.bearingAt(d, 15))
-    }
-    return { path, bearings, durationMs, key: s.id }
-  } catch {
-    return null
-  }
+  return flyPath(line, fromD, s.d - STOP_BEFORE_M, durationMs, s.id)
 }
 
 /** Utcaképek gyorsítótára a munkamenet idejére */
