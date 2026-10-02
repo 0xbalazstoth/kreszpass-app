@@ -1,10 +1,12 @@
-import { Canvas, useFrame, useThree } from '@react-three/fiber'
+import { Canvas, useFrame } from '@react-three/fiber'
 import { useMemo, useRef } from 'react'
-import { PerspectiveCamera, type Group } from 'three'
-import { carToWorld, forward, pointOnCar, type Pose, type Segment } from '../../domain/maneuvers/geometry'
+import type { Group } from 'three'
+import { carToWorld, pointOnCar, type Pose, type Segment } from '../../domain/maneuvers/geometry'
 import type { Look, ManeuverStep, Site } from '../../domain/maneuvers/types'
 import type { Rect } from './layout'
 import { AutoShadows } from './AutoShadows'
+import { DriverAndMirrors } from './DriverMirrors'
+import { CENTER_F, LOOK_YAW, MIRRORS, OWN_CAR_LAYER } from './driverView'
 import { CarModel, Ground } from './parts'
 import { useQuality } from './quality'
 import { SceneLook } from './SceneLook'
@@ -19,27 +21,6 @@ export interface ManeuverView {
   reversing: boolean
 }
 
-/** Merre fordítja a fejét a vezető (radián, + = jobbra a menetirányhoz képest) */
-const LOOK_YAW: Record<Look, number> = {
-  ahead: 0,
-  mirror_left: -0.6,
-  mirror_right: 0.75,
-  mirror_inner: 0,
-  shoulder_left: -2.35,
-  shoulder_right: 2.45,
-  back: 2.85,
-}
-
-/** A visszapillantó tükrök: helyük a kocsin [előre, jobbra, magasság], nézési irányuk (a hátrafelé iránytól), és a képernyőn */
-const MIRRORS = [
-  { id: 'mirror_left', at: [1.95, -1.02, 1.05], turn: 0.18, rect: { left: 0.02, bottom: 0.05, w: 0.24, h: 0.15 } },
-  { id: 'mirror_inner', at: [1.75, 0, 1.32], turn: 0, rect: { left: 0.3, bottom: 0.83, w: 0.26, h: 0.13 } },
-  { id: 'mirror_right', at: [1.95, 1.02, 1.05], turn: -0.18, rect: { left: 0.74, bottom: 0.05, w: 0.24, h: 0.15 } },
-] as const
-
-/** A kocsi közepe (a modell origója) a hátsó tengelytől 1,35 m-re előre */
-const CENTER_F = 1.35
-
 function ParkedCar({ pose, color }: { pose: Pose; color: string }) {
   const [x, z] = carToWorld(pose, CENTER_F, 0)
   return (
@@ -48,9 +29,6 @@ function ParkedCar({ pose, color }: { pose: Pose; color: string }) {
     </group>
   )
 }
-
-/** A saját autó külön rétegen: a vezető szemével nem látszik (különben a teteje kitöltené a képet), a tükrökben igen */
-const OWN_CAR_LAYER = 1
 
 function OwnCar({ poseNow }: { poseNow: ManeuverView['poseNow'] }) {
   const ref = useRef<Group>(null)
@@ -67,58 +45,6 @@ function OwnCar({ poseNow }: { poseNow: ManeuverView['poseNow'] }) {
       <CarModel color="#2563eb" />
     </group>
   )
-}
-
-/**
- * A vezető szeme a bal első ülésben; a fej a lépés szerint fordul (tükör, váll fölött hátra). Ez a komponens rajzolja
- * a fő képet és a három tükör képét is (külön kamerákkal, a képernyő egy-egy kivágásába).
- */
-function DriverAndMirrors({ poseNow, look, mirrorsOn }: { poseNow: ManeuverView['poseNow']; look: Look; mirrorsOn: boolean }) {
-  const { gl, scene, camera, size } = useThree()
-  const yaw = useRef(LOOK_YAW[look])
-  const cams = useRef<PerspectiveCamera[] | null>(null)
-  useFrame((_, dt) => {
-    cams.current ??= MIRRORS.map(() => {
-      const cam = new PerspectiveCamera(38, 1.6, 0.05, 200)
-      // A tükrökben a saját autó oldala is látszik
-      cam.layers.enable(OWN_CAR_LAYER)
-      return cam
-    })
-    const { pose } = poseNow()
-    // A fej fordulása simán, kb. fél másodperc alatt
-    const want = LOOK_YAW[look]
-    yaw.current += (want - yaw.current) * Math.min(1, dt * 6)
-    const [ex, ez] = carToWorld(pose, 1.45, -0.37)
-    camera.position.set(ex, 1.22, ez)
-    const [fx, fz] = forward(pose.heading + yaw.current)
-    camera.lookAt(ex + fx * 30, look === 'mirror_inner' ? 1.6 : 1.05, ez + fz * 30)
-
-    gl.setScissorTest(false)
-    gl.setViewport(0, 0, size.width, size.height)
-    gl.render(scene, camera)
-    if (!mirrorsOn) return
-    MIRRORS.forEach((m, i) => {
-      const cam = cams.current![i]
-      const [mx, mz] = carToWorld(pose, m.at[0], m.at[1])
-      cam.position.set(mx, m.at[2], mz)
-      // Hátrafelé néz, a külső tükrök kissé kifelé
-      const [bx, bz] = forward(pose.heading + Math.PI + m.turn)
-      cam.lookAt(mx + bx * 20, 0.9, mz + bz * 20)
-      const w = Math.round(size.width * m.rect.w)
-      const h = Math.round(size.height * m.rect.h)
-      cam.aspect = w / h
-      cam.updateProjectionMatrix()
-      const x = Math.round(size.width * m.rect.left)
-      const y = Math.round(size.height * m.rect.bottom)
-      gl.setScissorTest(true)
-      gl.setScissor(x, y, w, h)
-      gl.setViewport(x, y, w, h)
-      gl.render(scene, cam)
-    })
-    gl.setScissorTest(false)
-    gl.setViewport(0, 0, size.width, size.height)
-  }, 1)
-  return null
 }
 
 /** A lépés referenciavonala a földön (narancssárga): ehhez kell igazítani a kocsi megjelölt pontját */

@@ -6,6 +6,7 @@ import { compareCodes, evaluateSession } from '../../domain/scoring'
 import type { Outcome } from '../../domain/types'
 import { db } from '../../db'
 import { formatDate, formatDistance, formatSeconds, percent } from '../../lib/format'
+import { driveSpotDistance } from '../../sim/examiner/result'
 import { href } from '../../lib/router'
 
 const OUTCOME_LABEL: Record<Outcome, string> = {
@@ -44,7 +45,7 @@ export function ExamSheet({ sessionId }: { sessionId: string }) {
         </a>
         <div className="actions">
           {route && (
-            <a className="btn" href={href(`drive/${route.id}?mode=${session.mode}`)}>
+            <a className="btn" href={href(session.mode === 'drive' ? `sim/${route.id}` : `drive/${route.id}?mode=${session.mode}`)}>
               Újra
             </a>
           )}
@@ -59,7 +60,7 @@ export function ExamSheet({ sessionId }: { sessionId: string }) {
           <div>
             <h1>Forgalmi vizsga minősítő lap</h1>
             <p className="muted">
-              Szimuláció · {isExam ? 'próbavizsga' : session.mode === 'practice' ? 'gyakorlás' : session.mode === 'tour' ? 'teljes útvonal' : 'ismétlés'} · Megengedett hibavonalak
+              Szimuláció · {isExam ? 'próbavizsga' : session.mode === 'practice' ? 'gyakorlás' : session.mode === 'tour' ? 'teljes útvonal' : session.mode === 'drive' ? 'vezetés' : 'ismétlés'} · Megengedett hibavonalak
               száma: {MAX_FAULT_LINES}
             </p>
           </div>
@@ -88,16 +89,20 @@ export function ExamSheet({ sessionId }: { sessionId: string }) {
             <dt>Sikertelenséget okozó hibák</dt>
             <dd className={result.fatal.length ? 'bad' : ''}>{result.fatal.length ? result.fatal.join(', ') : 'nincs'}</dd>
           </div>
-          <div>
-            <dt>Helyes válaszok</dt>
-            <dd>
-              {result.correct} / {result.answered} ({percent(result.correct, result.answered)})
-            </dd>
-          </div>
-          <div>
-            <dt>Átlagos reakcióidő</dt>
-            <dd>{formatSeconds(result.avgReactionMs)}</dd>
-          </div>
+          {session.mode !== 'drive' && (
+            <>
+              <div>
+                <dt>Helyes válaszok</dt>
+                <dd>
+                  {result.correct} / {result.answered} ({percent(result.correct, result.answered)})
+                </dd>
+              </div>
+              <div>
+                <dt>Átlagos reakcióidő</dt>
+                <dd>{formatSeconds(result.avgReactionMs)}</dd>
+              </div>
+            </>
+          )}
         </dl>
 
         <div className="sheet-grid">
@@ -153,11 +158,13 @@ export function ExamSheet({ sessionId }: { sessionId: string }) {
                 const s = situations.get(a.situationId)
                 // A váratlan helyzetek nincsenek eltárolva: a helyük az azonosítóban van
                 const hazardD = s ? null : hazardDistance(a.situationId)
+                // A vezetés közben, helyzeten kívül elkövetett hibák: a helyük az azonosítóban van
+                const driveD = s ? null : driveSpotDistance(a.situationId)
                 return (
                   <tr key={i} className={a.codes.some((c) => EVAL_CODES[c]?.fatal) ? 'bad' : a.codes.length ? 'meh' : ''}>
                     <td>{i + 1}</td>
-                    <td>{s ? formatDistance(s.d) : hazardD !== null ? formatDistance(hazardD) : '–'}</td>
-                    <td>{s ? KIND_LABEL[s.kind] : hazardD !== null ? KIND_LABEL.hazard : 'törölt helyzet'}</td>
+                    <td>{s ? formatDistance(s.d) : hazardD !== null ? formatDistance(hazardD) : driveD !== null ? formatDistance(driveD) : '–'}</td>
+                    <td>{s ? KIND_LABEL[s.kind] : hazardD !== null ? KIND_LABEL.hazard : driveD !== null ? 'Vezetés közben' : 'törölt helyzet'}</td>
                     <td>{a.promptTitle ?? a.promptId}</td>
                     <td>{OUTCOME_LABEL[a.outcome]}</td>
                     <td>{formatSeconds(a.reactionMs)}</td>

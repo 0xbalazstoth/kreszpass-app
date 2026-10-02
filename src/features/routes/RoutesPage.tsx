@@ -68,10 +68,13 @@ export function RoutesPage() {
                 <a className="btn" href={href(`route/${r.id}`)}>
                   Szerkesztés
                 </a>
-                <a className={`btn ${own.length ? '' : 'disabled'}`} href={own.length ? href(`drive/${r.id}?mode=practice`) : undefined}>
-                  Gyakorlás
+                <a className="btn primary" href={href(`sim/${r.id}`)} title="Vezess végig az útvonalon: te kormányzol, indexelsz, fékezel">
+                  Vezetés
                 </a>
-                <a className={`btn primary ${own.length ? '' : 'disabled'}`} href={own.length ? href(`drive/${r.id}?mode=exam`) : undefined}>
+                <a className={`btn ${own.length ? '' : 'disabled'}`} href={own.length ? href(`drive/${r.id}?mode=practice`) : undefined} title="Kérdések a helyzetekről">
+                  Kérdések
+                </a>
+                <a className={`btn ${own.length ? '' : 'disabled'}`} href={own.length ? href(`drive/${r.id}?mode=exam`) : undefined} title="Próbavizsga kérdésekkel">
                   Próbavizsga
                 </a>
                 <a

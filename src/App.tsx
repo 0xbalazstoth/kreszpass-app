@@ -1,4 +1,5 @@
 import { DrivePage } from './features/drive/DrivePage'
+import { FreeDrivePage } from './features/drive/FreeDrivePage'
 import { ExamSheet } from './features/exam-sheet/ExamSheet'
 import { ManeuverPage } from './features/maneuvers/ManeuverPage'
 import { ManeuversPage } from './features/maneuvers/ManeuversPage'
@@ -11,7 +12,7 @@ import type { Mode } from './domain/types'
 import { href, useHashRoute } from './lib/router'
 
 const NAV = [
-  { path: '', label: 'Útvonalak', match: ['', 'route', 'drive', 'sheet'] },
+  { path: '', label: 'Útvonalak', match: ['', 'route', 'drive', 'sim', 'sheet'] },
   { path: 'review', label: 'Ismétlés', match: ['review'] },
   { path: 'signs', label: 'Táblák', match: ['signs'] },
   { path: 'maneuvers', label: 'Manőverek', match: ['maneuvers'] },
@@ -22,7 +23,7 @@ const NAV = [
 export default function App() {
   const { parts, query } = useHashRoute()
   const [page = '', arg] = parts
-  const fullBleed = page === 'route' || page === 'drive' || page === 'review' || (page === 'maneuvers' && !!arg)
+  const fullBleed = page === 'route' || page === 'drive' || page === 'sim' || page === 'review' || (page === 'maneuvers' && !!arg)
 
   let content
   switch (page) {
@@ -39,6 +40,9 @@ export default function App() {
       content = <DrivePage key={`${arg}-${mode}-${location.hash}`} routeId={arg ?? null} mode={mode} focus={focus} />
       break
     }
+    case 'sim':
+      content = arg ? <FreeDrivePage key={arg} routeId={arg} /> : null
+      break
     case 'review':
       content = <DrivePage key="review" routeId={null} mode="review" />
       break

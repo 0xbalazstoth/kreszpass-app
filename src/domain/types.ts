@@ -86,8 +86,8 @@ export type GraphicsSetting = 'auto' | 'low' | 'medium' | 'high'
 /** Ennyire sűrűn kerülnek váratlan helyzetek az útvonalra */
 export type HazardDensity = 'off' | 'few' | 'many'
 
-/** tour: a teljes útvonal végigvezetése a vizsgabiztos hangos utasításaival */
-export type Mode = 'practice' | 'exam' | 'review' | 'tour'
+/** tour: a teljes útvonal végigvezetése a vizsgabiztos hangos utasításaival; drive: vezetés a szimulátorban */
+export type Mode = 'practice' | 'exam' | 'review' | 'tour' | 'drive'
 
 export type Outcome = 'ok' | 'late' | 'slow' | 'wrong' | 'timeout'
 

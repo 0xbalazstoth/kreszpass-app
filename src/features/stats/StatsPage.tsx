@@ -11,7 +11,7 @@ import { db } from '../../db'
 import { formatDate, formatDistance, formatSeconds, percent } from '../../lib/format'
 import { href } from '../../lib/router'
 
-const MODE_LABEL = { practice: 'gyakorlás', exam: 'próbavizsga', review: 'ismétlés', tour: 'teljes útvonal' } as const
+const MODE_LABEL = { practice: 'gyakorlás', exam: 'próbavizsga', review: 'ismétlés', tour: 'teljes útvonal', drive: 'vezetés' } as const
 
 function errorColor(rate: number | null): string {
   if (rate === null) return '#9ca3af'

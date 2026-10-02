@@ -31,7 +31,7 @@ interface Step {
 
 type Phase = 'loading' | 'empty' | 'intro' | 'approach' | 'question' | 'feedback' | 'saving'
 
-const MODE_LABEL: Record<Mode, string> = { practice: 'Gyakorlás', exam: 'Próbavizsga', review: 'Ismétlés', tour: 'Teljes útvonal' }
+const MODE_LABEL: Record<Mode, string> = { practice: 'Gyakorlás', exam: 'Próbavizsga', review: 'Ismétlés', tour: 'Teljes útvonal', drive: 'Vezetés' }
 /** Legfeljebb ennyit várunk az utcaképekre a közeledés elején */
 const FRAME_WAIT_MS = 1200
 /** Mozdulatok billentyűi: M = tükör, nyilak = index, szóköz / lefelé nyíl = fék */

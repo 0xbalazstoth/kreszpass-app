@@ -53,6 +53,41 @@ autókhoz, a kereke a szegélyhez, és a leírt referenciapontok (pl. „a jobb 
 Billentyűzettel az 1–4 gombok választanak, az Enter továbblép. Bekapcsolható a kérdések felolvasása és a
 hangos válasz (a sorszám kimondásával), ha a böngésző támogatja.
 
+## Vezetés (szimulátor)
+
+Az útvonallistán a **Vezetés** gombbal a mentett útvonaladon magad vezetsz: kormányzol, gázt adsz, fékezel, indexelsz,
+tükörbe és hátra nézel. Nincs kérdés: a helyzet maga a kérdés, a mozdulataid a válasz.
+
+- **A város a valódi térképből épül** (a helyi OpenStreetMap-adatokból): az utak valódi szélességgel és sávszámmal, a sáv
+  megszűnésénél fokozatosan keskenyedve, kereszteződések lekerekített sarkokkal, járdák szegélykővel, felezővonal, megállási
+  vonal, zebra, táblák, működő jelzőlámpák, házsorok, fák, lámpák.
+- **Táblák mindenhol**: az OpenStreetMap-ben felvett táblák mellett a szabályokkal összhangban kitalált táblázás: a különböző
+  rangú utak kereszteződésében Főútvonal és Elsőbbségadás kötelező (cápafoggal), körforgalom, az egyirányú utca két végén
+  „Egyirányú forgalmú út” és „Behajtani tilos”, sebességkorlátozás, ahol változik a megengedett sebesség. Az egyenrangú
+  lakóutcák kereszteződésében nincs tábla (jobbkéz-szabály).
+- **Útbaigazító panel** (bal felül, mindig látszik): a következő manőver nyíllal, a távolsága és az utca neve, ahová érsz;
+  hosszú egyenesen „Kövesse az utat”. Ha rossz irányba fordulsz, szabályos kerülőt mutat vissza az útvonalra.
+- **Vizsgabiztos**: hangosan és kiírva mondja az irányt („A következő kereszteződésnél forduljon jobbra.”, közvetlenül előtte
+  „Itt forduljon jobbra.”, lámpás és négyágú kereszteződésben „haladjon tovább egyenesen”), a végén kéri a
+  megállást a járda mellett. Közben a minősítő lap kódjaival figyeli az elindulást (bal tükör, vállon át hátranézés, index),
+  a gyorshajtást, a STOP táblát, a piros és a sárga jelzést, a kanyarodás előtti irányjelzést és tükörbe nézést, a
+  körforgalomból kihajtást, a bekapcsolva felejtett indexet, a bal oldalon haladást, az egyirányú utcát, a szegélyre
+  felhajtást és az ütközést.
+- **Élő forgalom**: más autók a KRESZ szerint közlekednek (sávban, követési távolsággal, indexelnek, megállnak a pirosnál és
+  a STOP táblánál, elsőbbséget adnak a főúton haladónak, a jobbról érkezőnek, balra kanyarodva a szemből jövőnek, a
+  körforgalomban haladónak), a gyalogosok a járdán sétálnak és a zebrán átkelnek. Minden vezetés más: a kereszteződéseidhez
+  időzítve érkezik egy-egy autó, a zebrák elé gyalogos, így tényleg el kell döntened, kié az elsőbbség. A vizsgabiztos
+  figyeli az elsőbbség megadását (8/24), a gyalogos átengedését a zebrán (8/27), a követési távolságot (5/6) és az ütközést
+  (8/3, a vizsga véget ér). A forgalom sűrűsége a grafikai minőséghez igazodik.
+- **Gyakorlás** (minden hiba azonnal megjelenik), **Vizsga** (értékelés csak a végén, mint a valóságban) és **Bemutató**
+  (a robotsofőr hibátlanul végigvezet: figyeld, mikor néz tükörbe, indexel, lassít).
+- A vezetés végén a megszokott minősítő lap készül; a helyzetekhez tartozó hibák a statisztikában is megjelennek.
+- Kezelés: W/↑ gáz, S/↓ fék, A D/← → kormány, Q/E index, 1 2 3 tükrök, Z/C hátranézés, Szóköz kézifék, R előre/hátra,
+  H vészvillogó, V nézet, Esc szünet.
+- A szimuláció logikája (`src/sim/`) böngésző nélkül is fut: a tesztekben egy robotsofőr valódi újpesti útvonalakon
+  hibátlanul végigvezet forgalommal is, egy hanyag robot pedig megkapja a gyorshajtás és az elmulasztott index hibáit, az
+  elsőbbséget nem adó a 8/24-et; öt perc sűrű forgalomban sincs ütközés és holtpont az autók között.
+
 ## 3D és valódi táblák
 
 - **3D nézet a vezetőülésből.** Minden helyzetnél a three.js-szel rajzolt kereszteződésbe „hajtasz be”: valódi KRESZ táblák
