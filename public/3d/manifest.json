@@ -1,0 +1,196 @@
+[
+  {
+    "id": "asphalt",
+    "kind": "texture",
+    "source": "https://polyhaven.com/a/asphalt_04",
+    "name": "Asphalt 04",
+    "authors": [
+      "Jenelle van Heerden",
+      "Sergej Majboroda"
+    ],
+    "license": "CC0"
+  },
+  {
+    "id": "pavement",
+    "kind": "texture",
+    "source": "https://polyhaven.com/a/concrete_pavement",
+    "name": "Concrete Pavement",
+    "authors": [
+      "Charlotte Baglioni"
+    ],
+    "license": "CC0"
+  },
+  {
+    "id": "kerb",
+    "kind": "texture",
+    "source": "https://polyhaven.com/a/concrete_wall_001",
+    "name": "Concrete Wall 001",
+    "authors": [
+      "Dimitrios Savva",
+      "Rico Cilliers"
+    ],
+    "license": "CC0"
+  },
+  {
+    "id": "plaster",
+    "kind": "texture",
+    "source": "https://polyhaven.com/a/beige_wall_001",
+    "name": "Beige Wall 001",
+    "authors": [
+      "Dimitrios Savva",
+      "Rico Cilliers"
+    ],
+    "license": "CC0"
+  },
+  {
+    "id": "plaster_rough",
+    "kind": "texture",
+    "source": "https://polyhaven.com/a/beige_wall_002",
+    "name": "Beige Wall 002",
+    "authors": [
+      "Dimitrios Savva",
+      "Rico Cilliers"
+    ],
+    "license": "CC0"
+  },
+  {
+    "id": "plaster_grey",
+    "kind": "texture",
+    "source": "https://polyhaven.com/a/grey_plaster_02",
+    "name": "Grey Plaster 02",
+    "authors": [
+      "Rob Tuytel"
+    ],
+    "license": "CC0"
+  },
+  {
+    "id": "brick",
+    "kind": "texture",
+    "source": "https://polyhaven.com/a/brick_wall_02",
+    "name": "Brick Wall 02",
+    "authors": [
+      "Dimitrios Savva"
+    ],
+    "license": "CC0"
+  },
+  {
+    "id": "grass",
+    "kind": "texture",
+    "source": "https://polyhaven.com/a/grass_ground",
+    "name": "Grass Ground",
+    "authors": [
+      "Charlotte Baglioni"
+    ],
+    "license": "CC0"
+  },
+  {
+    "id": "sky",
+    "kind": "hdri",
+    "source": "https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky",
+    "name": "Kloofendal 48d Partly Cloudy (Pure Sky)",
+    "authors": [
+      "Greg Zaal",
+      "Jarod Guest"
+    ],
+    "license": "CC0"
+  },
+  {
+    "id": "street_lamp",
+    "kind": "model",
+    "file": "models/street_lamp/street_lamp.gltf",
+    "source": "https://polyhaven.com/a/street_lamp_01",
+    "name": "Street Lamp 01",
+    "authors": [
+      "Josh Dean"
+    ],
+    "license": "CC0"
+  },
+  {
+    "id": "road_barrier",
+    "kind": "model",
+    "file": "models/road_barrier/road_barrier.gltf",
+    "source": "https://polyhaven.com/a/concrete_road_barrier",
+    "name": "Concrete Road Barrier",
+    "authors": [
+      "Amal Kumar"
+    ],
+    "license": "CC0"
+  },
+  {
+    "id": "woman",
+    "kind": "model",
+    "file": "models/woman/woman.glb",
+    "source": "https://poly.pizza/m/AQsd9ngvKU",
+    "name": "Woman",
+    "authors": [
+      "Quaternius"
+    ],
+    "license": "CC0"
+  },
+  {
+    "id": "woman_casual",
+    "kind": "model",
+    "file": "models/woman_casual/woman_casual.glb",
+    "source": "https://poly.pizza/m/jpKRgGDxhk",
+    "name": "Woman Casual",
+    "authors": [
+      "Quaternius"
+    ],
+    "license": "CC0"
+  },
+  {
+    "id": "man",
+    "kind": "model",
+    "file": "models/man/man.glb",
+    "source": "https://poly.pizza/m/HMnuH5geEG",
+    "name": "Man",
+    "authors": [
+      "Quaternius"
+    ],
+    "license": "CC0"
+  },
+  {
+    "id": "man_suit",
+    "kind": "model",
+    "file": "models/man_suit/man_suit.glb",
+    "source": "https://poly.pizza/m/mQnGoME1ez",
+    "name": "Man in Suit",
+    "authors": [
+      "Quaternius"
+    ],
+    "license": "CC0"
+  },
+  {
+    "id": "man_casual",
+    "kind": "model",
+    "file": "models/man_casual/man_casual.glb",
+    "source": "https://poly.pizza/m/kZ3DmIoGip",
+    "name": "Casual Character",
+    "authors": [
+      "Quaternius"
+    ],
+    "license": "CC0"
+  },
+  {
+    "id": "worker",
+    "kind": "model",
+    "file": "models/worker/worker.glb",
+    "source": "https://poly.pizza/m/Yg2bQZO6Hj",
+    "name": "Worker",
+    "authors": [
+      "Quaternius"
+    ],
+    "license": "CC0"
+  },
+  {
+    "id": "car_sedan",
+    "kind": "model",
+    "file": "models/car_sedan/car_sedan.glb",
+    "source": "https://poly.pizza/m/Cz6yDaUcM9",
+    "name": "Car",
+    "authors": [
+      "Quaternius"
+    ],
+    "license": "CC0"
+  }
+]

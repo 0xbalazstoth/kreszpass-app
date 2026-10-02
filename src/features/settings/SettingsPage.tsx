@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { fetchImages } from '../../data/mapillary'
 import { loadLocalIndex, type LocalIndex } from '../../data/osmLocal'
-import { DEFAULT_SETTINGS, type HazardDensity, type Settings } from '../../domain/types'
+import { currentQuality, setGraphicsSetting } from '../../components/scene3d/quality'
+import { DEFAULT_SETTINGS, type GraphicsSetting, type HazardDensity, type Settings } from '../../domain/types'
 import { db, getSettings, saveSettings } from '../../db'
 import { bboxOf } from '../../lib/geo'
 
@@ -16,6 +17,8 @@ interface Backup {
   signCards?: unknown[]
   signSessions?: unknown[]
 }
+
+const QUALITY_LABEL = { low: 'alacsony', medium: 'közepes', high: 'magas' } as const
 
 export function SettingsPage() {
   const [s, setS] = useState<Settings | null>(null)
@@ -33,7 +36,7 @@ export function SettingsPage() {
 
   const set = (patch: Partial<Settings>) => setS({ ...s, ...patch })
   const valid =
-    s.okMs > 0 && s.lateMs > s.okMs && s.timeoutMs > s.lateMs && s.approachMs >= 500 && s.signFlashMs >= 200 && s.tourSpeedKmh >= 10 && s.tourSpeedKmh <= 90
+    s.okMs > 0 && s.lateMs > s.okMs && s.timeoutMs > s.lateMs && s.approachMs >= 500 && s.tourSpeedKmh >= 10 && s.tourSpeedKmh <= 90
 
   async function save() {
     if (!valid || !s) {
@@ -41,6 +44,7 @@ export function SettingsPage() {
       return
     }
     await saveSettings(s)
+    setGraphicsSetting(s.graphics)
     setMsg({ kind: 'ok', text: 'Elmentve.' })
   }
 
@@ -178,8 +182,13 @@ export function SettingsPage() {
             />
           </label>
           <label>
-            Tábla felvillanása (ms)
-            <input type="number" min={200} step={100} value={s.signFlashMs} onChange={(e) => set({ signFlashMs: Number(e.target.value) })} />
+            3D minőség
+            <select value={s.graphics} onChange={(e) => set({ graphics: e.target.value as GraphicsSetting })}>
+              <option value="auto">Automatikus (most: {QUALITY_LABEL[currentQuality()]})</option>
+              <option value="low">Alacsony: árnyék és égbolt nélkül, gyengébb telefonra</option>
+              <option value="medium">Közepes: textúrák, égbolt, árnyékok</option>
+              <option value="high">Magas: élesebb árnyékok, több utcabútor</option>
+            </select>
           </label>
           <label>
             Váratlan helyzetek az útvonalon

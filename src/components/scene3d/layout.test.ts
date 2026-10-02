@@ -325,3 +325,40 @@ describe('3D elrendezés – táblagyakorlás az utakon', () => {
     expect(l.camera.startZ).toBeLessThanOrEqual(45)
   })
 })
+
+describe('3D elrendezés – utcabútorok', () => {
+  const street = buildLayout({ layout: 'road', turn: 'straight', cars: [], roadSign: 'C-033-30' }, 10)
+  const junction = buildLayout({ layout: 'junction', turn: 'straight', mySign: 'stop', cars: [] }, 10)
+
+  for (const [name, l] of [
+    ['utca', street],
+    ['kereszteződés', junction],
+  ] as const) {
+    it(`${name}: a lámpák és fák a járdán vannak, nem az úttesten`, () => {
+      expect(l.furniture!.length).toBeGreaterThan(0)
+      for (const f of l.furniture!) {
+        const onWalk = l.sidewalks.some((r) => Math.abs(f.x - r.x) <= r.w / 2 && Math.abs(f.z - r.z) <= r.d / 2)
+        expect(onWalk, `${f.kind} ${f.x},${f.z}`).toBe(true)
+      }
+    })
+
+    it(`${name}: táblától és jelzőlámpától legalább 3 m-re`, () => {
+      for (const f of l.furniture!) {
+        for (const s of l.signs) expect(Math.hypot(s.x - f.x, s.z - f.z)).toBeGreaterThanOrEqual(3)
+        for (const x of l.lights) expect(Math.hypot(x.x - f.x, x.z - f.z)).toBeGreaterThanOrEqual(3)
+      }
+    })
+  }
+
+  it('a tábla előtti szakaszon (a vezető és a tábla között) nincs fa a tábla oldalán', () => {
+    const post = street.signs.find((s) => s.codes.includes('C-033-30'))!
+    for (const f of street.furniture!.filter((x) => x.kind === 'tree' && Math.sign(x.x) === Math.sign(post.x))) {
+      expect(f.z - post.z <= 0 || f.z - post.z >= 25).toBe(true)
+    }
+  })
+
+  it('sűrűbb beállításnál több utcabútor', () => {
+    const sparse = buildLayout({ layout: 'road', turn: 'straight', cars: [], roadSign: 'C-033-30' }, 30).furniture!.length
+    expect(street.furniture!.length).toBeGreaterThan(sparse)
+  })
+})

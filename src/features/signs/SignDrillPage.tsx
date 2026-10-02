@@ -22,7 +22,7 @@ const ROAD_MIN_MS = 3000
 
 type Phase = 'intro' | 'flash' | 'answer' | 'feedback' | 'done'
 type GroupFilter = SignGroup | 'all'
-/** Táblakép: a tábla felvillan; Az utakon: egy mentett útvonal valódi tábláit látod a helyükön, 3D-ben és a térképen */
+/** Táblakép: a tábla végig látszik, rögtön a válaszokkal; Az utakon: egy mentett útvonal valódi tábláit látod a helyükön, 3D-ben és a térképen */
 type DrillMode = 'flash' | 'road'
 
 const GROUPS: GroupFilter[] = ['all', ...(Object.keys(GROUP_LABEL) as SignGroup[])]
@@ -38,7 +38,6 @@ export function SignDrillPage() {
   const [phase, setPhase] = useState<Phase>('intro')
   const [group, setGroup] = useState<GroupFilter>('all')
   const [count, setCount] = useState(20)
-  const [flashMs, setFlashMs] = useState(1200)
   const [view, setView] = useState({ approachMs: 2500, view3d: true, terrain: true })
   const [mode, setMode] = useState<DrillMode>('flash')
   /** A futó kör módja (a fülek váltása nem hat a folyamatban lévő körre) */
@@ -68,7 +67,6 @@ export function SignDrillPage() {
 
   useEffect(() => {
     getSettings().then((s) => {
-      setFlashMs(s.signFlashMs)
       setView({ approachMs: s.approachMs, view3d: s.view3d, terrain: s.terrain })
     })
     return () => {
@@ -122,7 +120,7 @@ export function SignDrillPage() {
   }
 
   function begin(m: DrillMode, items: Array<{ sign: SignInfo; place?: RoadPlace }>) {
-    // Minden táblaképet előre betöltünk, hogy a felvillanás pontos legyen
+    // Minden táblaképet előre betöltünk, hogy a tábla a kérdéssel együtt jelenjen meg
     for (const { sign } of items) new Image().src = signUrl(sign.code)
     // A zavaró válaszok a teljes táblakészletből jönnek, lehetőleg a tábla saját csoportjából
     setQuestions(items.map(({ sign }) => buildSignQuestion(sign, SIGNS)))
@@ -132,12 +130,22 @@ export function SignDrillPage() {
     setIdx(0)
     setChosen(null)
     sessionStart.current = Date.now()
-    setPhase('flash')
+    showQuestion(m)
   }
 
-  // Felvillanás (az utakon: elhaladás a tábla mellett), majd a válaszlehetőségek
-  // Az utakon legalább 3 s, hogy a tábla mellett elhaladva el is lehessen olvasni
-  const showMs = drillMode === 'road' ? Math.max(view.approachMs, ROAD_MIN_MS) : flashMs
+  /** Táblaképnél a tábla és a válaszok egyszerre jelennek meg; az utakon előbb elhaladsz a tábla mellett */
+  function showQuestion(m: DrillMode) {
+    if (m === 'road') {
+      setPhase('flash')
+      return
+    }
+    answerStart.current = performance.now()
+    setPhase('answer')
+  }
+
+  // Az utakon: elhaladás a tábla mellett, majd a válaszlehetőségek
+  // Legalább 3 s, hogy a tábla mellett elhaladva el is lehessen olvasni
+  const showMs = Math.max(view.approachMs, ROAD_MIN_MS)
   useEffect(() => {
     if (phase !== 'flash') return
     const t = window.setTimeout(() => {
@@ -184,7 +192,7 @@ export function SignDrillPage() {
       return
     }
     setIdx(idx + 1)
-    setPhase('flash')
+    showQuestion(drillMode)
   }
 
   useEffect(() => {
@@ -238,8 +246,8 @@ export function SignDrillPage() {
           {mode === 'flash' ? (
             <>
               <p>
-                A tábla {formatSeconds(flashMs)} ideig látszik, utána választod ki a jelentését. Minél gyorsabban, annál jobb: a rosszul vagy
-                lassan felismert táblák hamarabb visszajönnek.
+                Látod a táblát, és kiválasztod a jelentését. Minél gyorsabban, annál jobb: a rosszul vagy lassan felismert táblák
+                hamarabb visszajönnek.
               </p>
               <div className="chips" role="radiogroup" aria-label="Táblacsoport">
                 {GROUPS.map((g) => (
@@ -385,7 +393,6 @@ export function SignDrillPage() {
 
   // ------------------------------------------------------------ gyakorlás
   if (!q) return null
-  const showSign = phase === 'flash' || phase === 'feedback'
   const place = drillMode === 'road' ? places[idx] : undefined
   const header = (
     <header className="drive-top">
@@ -474,9 +481,8 @@ export function SignDrillPage() {
     <section className="signs drill">
       {header}
       <div className="flash-box">
-        {showSign ? <img src={signUrl(q.target.code)} alt="" className="flash-sign" /> : <span className="flash-hidden">?</span>}
+        <img src={signUrl(q.target.code)} alt="" className="flash-sign" />
       </div>
-      {phase === 'flash' && <p className="approaching">Figyelj!</p>}
       {questionBlock}
     </section>
   )

@@ -58,7 +58,7 @@ hangos válasz (a sorszám kimondásával), ha a böngésző támogatja.
   stopvonal előtt jön, amikor dönteni kell, és a vezető a partner felé fordítja a fejét.
 - **3D térképes repülés.** A kis ablakban a térkép az igazi útvonaladon repül végig 3D épületekkel és domborzattal,
   a helyzetek pontján a valódi táblával. A ⤢ gombbal a két nézet felcserélhető.
-- **Táblafelismerés.** A *Táblák* menüben két mód van. *Táblakép*: a tábla egy pillanatra felvillan, utána kell kiválasztani
+- **Táblafelismerés.** A *Táblák* menüben két mód van. *Táblakép*: a tábla végig látszik, és minél gyorsabban kell kiválasztani
   a jelentését. *Az utakon*: egy (véletlen) mentett útvonalad valódi tábláit látod a helyükön: a 3D nézetben elhaladsz
   a tábla mellett, a térkép a valódi helyére repül, és amikor a tábla már mögötted van, választod ki a jelentését.
   A táblák az OpenStreetMap-ben kitáblázott táblákból és az útvonal ellenőrzött helyzeteiből jönnek, egy véletlen
@@ -72,6 +72,11 @@ hangos válasz (a sorszám kimondásával), ha a böngésző támogatja.
   előzési tilalomról, a közeledő vonatról és a felnyílt sorompó melletti piros fényről (KRESZ 39. §).
 - A körforgalom kijáratszámát, a villamos- és autóbuszmegállókat a régebben felismert útvonalaknál a helyzetfelismerés
   újrafuttatásával kapod meg.
+- **Valósághű 3D.** Fényképes PBR-textúrák (aszfalt, járdalap, szegélykő, vakolt és téglahomlokzatok, fű), HDR égbolt a
+  fényekhez és a tükröződésekhez, napfény árnyékokkal, közvilágítási lámpák és fák a járdán, kidolgozott autómodellek
+  (lakkozott fényezés, az égboltot tükröző üvegezés, működő irányjelzők) és járó-álló, animált gyalogosok, gyerek, útépítő munkás.
+  A busz, a villamos, a vonat, a mentő, a kisteherautó és a traktor saját (programból rajzolt) modell. A *3D minőség* (Beállítások)
+  automatikusan az eszközhöz igazodik: alacsony minőségen árnyék és HDR égbolt nélkül, gyengébb telefonra.
 - Gyengébb telefonon a Beállításokban a 3D nézet és a domborzat kikapcsolható: ilyenkor felülnézeti vázlat látszik.
 
 A táblák a Wikimedia Commonsról származnak (magyar KRESZ táblák, közkincs: PD-HU-exempt). Újraletöltés:
@@ -143,6 +148,8 @@ iPhone-on Safariban megnyitva a *Megosztás → Hozzáadás a Főképernyőhöz*
 | KRESZ táblák | Wikimedia Commons, közkincs (PD-HU-exempt), a repóban tárolva |
 | Domborzat | Mapzen Terrarium csempék, AWS Open Data |
 | 3D | three.js, React Three Fiber |
+| 3D textúrák, égbolt, lámpa, útelzáró | Poly Haven (polyhaven.com), CC0 közkincs; `npm run assets3d` tölti le, a forrás és a szerzők a `public/3d/manifest.json`-ban |
+| 3D gyalogosok, munkás, személyautó | Quaternius modelljei a Poly Pizzáról (poly.pizza), CC0 közkincs; szintén az `npm run assets3d` tölti le |
 
 Az adatok csak a böngészőben (IndexedDB) tárolódnak. Más eszközre a Beállítások → *Mentés fájlba* és
 *Visszatöltés fájlból* funkcióval vihetők át.

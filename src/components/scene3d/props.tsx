@@ -2,7 +2,9 @@ import { useFrame, useThree } from '@react-three/fiber'
 import { useRef } from 'react'
 import { PerspectiveCamera, Vector3, type Group, type Mesh, type MeshBasicMaterial } from 'three'
 import { easeOut, propPose, type Prop3D } from './layout'
+import { Model } from './Furniture'
 import { PED_LOOKS } from './looks'
+import { Person } from './people'
 import { CarModel, HumanFigure, Van, type Clock } from './parts'
 
 /**
@@ -52,7 +54,9 @@ function PropModel({ prop, clock }: { prop: Prop3D; clock: Clock }) {
     case 'ball':
       return <Ball prop={prop} clock={clock} />
     case 'child':
-      return <Walker prop={prop} clock={clock} scale={0.66} look={1} />
+      return <Walker prop={prop} clock={clock} scale={0.7} look={1} />
+    case 'worker':
+      return <Walker prop={prop} clock={clock} scale={1.03} look={2} />
     case 'cyclist':
       return <Cyclist />
     case 'tram':
@@ -67,6 +71,8 @@ function PropModel({ prop, clock }: { prop: Prop3D; clock: Clock }) {
       return <Island size={prop.size ?? [2, 30]} />
     case 'tram_track':
       return <TramTrack length={prop.size?.[1] ?? 140} />
+    case 'jersey':
+      return <Model name="road_barrier" />
   }
 }
 
@@ -145,27 +151,36 @@ function Ball({ prop, clock }: { prop: Prop3D; clock: Clock }) {
   )
 }
 
-/** Mozgó gyalogos (pl. a labda után szaladó gyerek): lépked, amíg halad */
+/** Mozgó gyalogos (pl. a labda után szaladó gyerek): valósághű modell, a lépés a sebességhez igazodik */
 function Walker({ prop, clock, scale, look }: { prop: Prop3D; clock: Clock; scale: number; look: number }) {
   const legL = useRef<Group>(null)
   const legR = useRef<Group>(null)
   const armL = useRef<Group>(null)
   const armR = useRef<Group>(null)
   const last = useRef<[number, number]>(prop.at)
-  useFrame(({ clock: c }) => {
+  const speed = useRef(0)
+  useFrame(({ clock: c }, dt) => {
     const p = propPose(prop, clock.progress(), clock.elapsed(), clock.sinceStop())
-    const moving = Math.hypot(p[0] - last.current[0], p[1] - last.current[1]) > 1e-4
+    const moved = Math.hypot(p[0] - last.current[0], p[1] - last.current[1])
+    speed.current = dt > 0 ? moved / dt : 0
     last.current = p
-    const swing = moving ? Math.sin(c.elapsedTime * 9) : 0
+    const swing = moved > 1e-4 ? Math.sin(c.elapsedTime * 9) : 0
     if (legL.current) legL.current.rotation.x = swing * 0.6
     if (legR.current) legR.current.rotation.x = -swing * 0.6
     if (armL.current) armL.current.rotation.x = -swing * 0.5
     if (armR.current) armR.current.rotation.x = swing * 0.5
   })
   return (
-    <group scale={scale}>
-      <HumanFigure look={PED_LOOKS[look % PED_LOOKS.length]} limbs={{ legL, legR, armL, armR }} />
-    </group>
+    <Person
+      name={prop.kind === 'worker' ? 'worker' : 'woman_casual'}
+      height={1.72 * scale}
+      speed={() => speed.current}
+      fallback={
+        <group scale={scale}>
+          <HumanFigure look={PED_LOOKS[look % PED_LOOKS.length]} limbs={{ legL, legR, armL, armR }} />
+        </group>
+      }
+    />
   )
 }
 
@@ -292,7 +307,7 @@ function Tram({ length, open }: { length: number; open: boolean }) {
           <group key={i} position={[0, 0, z]}>
             <mesh position={[0, 1.85, 0]}>
               <boxGeometry args={[w, 2.9, seg - 0.35]} />
-              <meshStandardMaterial color={TRAM_YELLOW} roughness={0.5} />
+              <meshPhysicalMaterial color={TRAM_YELLOW} roughness={0.35} metalness={0.3} clearcoat={1} clearcoatRoughness={0.1} />
             </mesh>
             <mesh position={[0, 0.45, 0]}>
               <boxGeometry args={[w - 0.05, 0.5, seg - 0.35]} />
@@ -302,7 +317,7 @@ function Tram({ length, open }: { length: number; open: boolean }) {
             {[-1, 1].map((s) => (
               <mesh key={s} position={[(s * w) / 2 + s * 0.006, 2.25, 0]}>
                 <boxGeometry args={[0.01, 1.0, seg - 1.2]} />
-                <meshStandardMaterial color="#1e293b" metalness={0.5} roughness={0.2} />
+                <meshPhysicalMaterial color="#1e293b" metalness={0.2} roughness={0.05} clearcoat={1} envMapIntensity={1.4} />
               </mesh>
             ))}
             {/* Csuklórész a következő kocsiszekrény felé (a hátsó végén nincs) */}
@@ -325,7 +340,7 @@ function Tram({ length, open }: { length: number; open: boolean }) {
       {/* Hátfal a vezető felé: nagy ablak, lámpák */}
       <mesh position={[0, 2.3, length / 2 + 0.01]}>
         <boxGeometry args={[w - 0.4, 1.1, 0.02]} />
-        <meshStandardMaterial color="#1e293b" metalness={0.5} roughness={0.2} />
+        <meshPhysicalMaterial color="#1e293b" metalness={0.2} roughness={0.05} clearcoat={1} envMapIntensity={1.4} />
       </mesh>
       {[-0.85, 0.85].map((x) => (
         <mesh key={x} position={[x, 0.95, length / 2 + 0.01]}>
@@ -356,7 +371,7 @@ function TramTrack({ length }: { length: number }) {
     <group>
       <mesh position={[0, 0.006, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[2.1, length]} />
-        <meshStandardMaterial color="#535b66" />
+        <meshStandardMaterial color="#34383d" roughness={0.95} />
       </mesh>
       {[-0.72, 0.72].map((x) => (
         <mesh key={x} position={[x, 0.012, 0]}>
@@ -397,12 +412,12 @@ function Bus({ open, blink }: { open: boolean; blink?: 'left' }) {
     <group>
       <mesh position={[0, 1.75, 0]}>
         <boxGeometry args={[w, 2.8, len]} />
-        <meshStandardMaterial color="#1d4ed8" roughness={0.5} />
+        <meshPhysicalMaterial color="#1d4ed8" roughness={0.35} metalness={0.35} clearcoat={1} clearcoatRoughness={0.1} />
       </mesh>
       {[-1, 1].map((s) => (
         <mesh key={s} position={[(s * w) / 2 + s * 0.006, 2.15, 0]}>
           <boxGeometry args={[0.01, 1.1, len - 1.4]} />
-          <meshStandardMaterial color="#1e293b" metalness={0.5} roughness={0.2} />
+          <meshPhysicalMaterial color="#1e293b" metalness={0.2} roughness={0.05} clearcoat={1} envMapIntensity={1.4} />
         </mesh>
       ))}
       {[-4, 0.5].map((z) => (
@@ -418,7 +433,7 @@ function Bus({ open, blink }: { open: boolean; blink?: 'left' }) {
       {/* Hátfal: ablak, féklámpák */}
       <mesh position={[0, 2.4, len / 2 + 0.01]}>
         <boxGeometry args={[w - 0.5, 0.8, 0.02]} />
-        <meshStandardMaterial color="#1e293b" metalness={0.5} roughness={0.2} />
+        <meshPhysicalMaterial color="#1e293b" metalness={0.2} roughness={0.05} clearcoat={1} envMapIntensity={1.4} />
       </mesh>
       {[-1, 1].map((s) => (
         <mesh key={`r${s}`} position={[s * 1.05, 1.0, len / 2 + 0.01]}>

@@ -80,6 +80,9 @@ export interface RoundaboutInfo {
   turn: Turn
 }
 
+/** A 3D nézet minősége: automatikus (az eszköz szerint) vagy kézzel választott */
+export type GraphicsSetting = 'auto' | 'low' | 'medium' | 'high'
+
 /** Ennyire sűrűn kerülnek váratlan helyzetek az útvonalra */
 export type HazardDensity = 'off' | 'few' | 'many'
 
@@ -151,8 +154,6 @@ export interface Settings {
   view3d: boolean
   /** Domborzat a térképen */
   terrain: boolean
-  /** Táblafelismerő gyakorlás: ennyi ideig látszik a tábla (ms) */
-  signFlashMs: number
   /** Próbavizsgán minden válasz után rövid visszajelzés (helyes-e, kód), magyarázat nélkül */
   examFeedback: boolean
   /** Mozdulat-gyakorlás a közeledés alatt (tükör, index, fék) */
@@ -163,6 +164,8 @@ export interface Settings {
   tourSpeedKmh: number
   /** Váratlan helyzetek (akadály, labda, mentő…) az útvonal egyenes szakaszain */
   hazards: HazardDensity
+  /** 3D minőség (textúrák, árnyékok, égbolt) */
+  graphics: GraphicsSetting
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -174,10 +177,10 @@ export const DEFAULT_SETTINGS: Settings = {
   approachMs: 2500,
   view3d: true,
   terrain: true,
-  signFlashMs: 1200,
   examFeedback: true,
   actionDrill: false,
   examinerVoice: true,
   tourSpeedKmh: 40,
   hazards: 'few',
+  graphics: 'auto',
 }

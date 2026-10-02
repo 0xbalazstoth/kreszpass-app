@@ -1,10 +1,13 @@
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
-import { useEffect, useMemo, useRef } from 'react'
+import { useMemo, useRef } from 'react'
 import { PerspectiveCamera, type Group } from 'three'
 import { carToWorld, forward, pointOnCar, type Pose, type Segment } from '../../domain/maneuvers/geometry'
 import type { Look, ManeuverStep, Site } from '../../domain/maneuvers/types'
 import type { Rect } from './layout'
+import { AutoShadows } from './AutoShadows'
 import { CarModel, Ground } from './parts'
+import { useQuality } from './quality'
+import { SceneLook } from './SceneLook'
 
 export interface ManeuverView {
   site: Site
@@ -51,14 +54,13 @@ const OWN_CAR_LAYER = 1
 
 function OwnCar({ poseNow }: { poseNow: ManeuverView['poseNow'] }) {
   const ref = useRef<Group>(null)
-  useEffect(() => {
-    ref.current?.traverse((o) => o.layers.set(OWN_CAR_LAYER))
-  }, [])
   useFrame(() => {
     const { pose } = poseNow()
     const [x, z] = carToWorld(pose, CENTER_F, 0)
     ref.current?.position.set(x, 0, z)
     ref.current?.rotation.set(0, -pose.heading, 0)
+    // Minden képkockán: a modell a háttérben töltődik be, az új részei is a saját rétegre kerüljenek
+    ref.current?.traverse((o) => o.layers.set(OWN_CAR_LAYER))
   })
   return (
     <group ref={ref}>
@@ -133,6 +135,7 @@ function RefLine({ refLine }: { refLine: NonNullable<ManeuverView['refLine']> })
 }
 
 export default function ManeuverScene3D({ site, poseNow, look, refLine, reversing }: ManeuverView) {
+  const quality = useQuality()
   const ground = useMemo(() => {
     const rect = (r: Site['asphalt'][number]): Rect => ({ x: r.x, z: r.z, w: r.w, d: r.d, rotY: r.rotY })
     return { asphalt: site.asphalt.map(rect), sidewalks: site.kerbs.map(rect), markings: site.markings.map(rect) }
@@ -140,11 +143,9 @@ export default function ManeuverScene3D({ site, poseNow, look, refLine, reversin
   const lookingBack = Math.abs(LOOK_YAW[look]) > 1.5
   return (
     <div className="scene3d maneuver-3d">
-      <Canvas dpr={[1, 2]} gl={{ antialias: true }} camera={{ fov: 72, near: 0.05, far: 250 }} aria-label="3D nézet a vezetőülésből">
-        <color attach="background" args={['#bcd6ec']} />
-        <fog attach="fog" args={['#bcd6ec', 60, 180]} />
-        <hemisphereLight args={['#ffffff', '#6b7d5c', 1.15]} />
-        <directionalLight position={[30, 60, 25]} intensity={1.5} />
+      <Canvas dpr={quality.dpr} shadows gl={{ antialias: true }} camera={{ fov: 72, near: 0.05, far: 250 }} aria-label="3D nézet a vezetőülésből">
+        <SceneLook quality={quality} focus={[(site.bounds[0] + site.bounds[2]) / 2, 0, (site.bounds[1] + site.bounds[3]) / 2]} radius={30} />
+        <AutoShadows enabled={quality.shadows > 0} />
         <Ground layout={ground} />
         {site.cars.map((c, i) => (
           <ParkedCar key={i} pose={c.pose} color={c.color} />

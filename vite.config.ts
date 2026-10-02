@@ -30,9 +30,16 @@ export default defineConfig({
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
-        // A helyi OSM-csempék (public/osm, ~8000 fájl) nem kerülnek az előtöltésbe, hanem használatkor tárolódnak
-        globIgnores: ['osm/**'],
+        // A helyi OSM-csempék (public/osm, ~8000 fájl) és a 3D anyagok (public/3d, kb. 5 MB) nem kerülnek az
+        // előtöltésbe, hanem használatkor tárolódnak
+        globIgnores: ['osm/**', '3d/**'],
         runtimeCaching: [
+          {
+            // 3D textúrák, égbolt, modellek (Poly Haven, CC0): változatlanok, az első használat után offline is elérhetők
+            urlPattern: ({ url, sameOrigin }) => sameOrigin && url.pathname.includes('/3d/'),
+            handler: 'CacheFirst',
+            options: { cacheName: '3d-assets', expiration: { maxEntries: 200, maxAgeSeconds: 180 * 24 * 3600 } },
+          },
           {
             // Helyi OSM-jegyzék: mindig a legfrissebbet kérjük, offline a tároltat használjuk
             urlPattern: ({ url, sameOrigin }) => sameOrigin && url.pathname.endsWith('/osm/index.json'),

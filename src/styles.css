@@ -1163,24 +1163,23 @@ kbd {
 }
 .flash-box {
   height: min(42dvh, 320px);
-  display: grid;
-  place-items: center;
+  /* Flex (nem grid): a kép százalékos magassága így a doboz rögzített magasságához igazodik, nem lóg ki */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   margin-bottom: 12px;
 }
 .flash-sign {
-  /* A doboz magassága rögzített, így a százalék feloldható */
   height: 82%;
+  max-height: 82%;
   width: auto;
   max-width: 80%;
+  min-height: 0;
   object-fit: contain;
-}
-.flash-hidden {
-  font-size: 5rem;
-  font-weight: 800;
-  color: var(--muted);
 }
 
 /* ---------------------------------------------------------------- minősítő lap */

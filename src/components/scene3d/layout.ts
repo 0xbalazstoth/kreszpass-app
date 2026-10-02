@@ -101,6 +101,10 @@ export type PropKind =
   | 'tractor'
   | 'island'
   | 'tram_track'
+  /** Beton útelzáró elem (Jersey-fal) */
+  | 'jersey'
+  /** Útépítő munkás (láthatósági mellényben) */
+  | 'worker'
 
 export interface Prop3D {
   kind: PropKind
@@ -122,6 +126,15 @@ export interface Prop3D {
   size?: [number, number]
 }
 
+/** Utcabútor a járdán: közvilágítási lámpa vagy fa */
+export interface Furniture3D {
+  kind: 'lamp' | 'tree'
+  x: number
+  z: number
+  /** A lámpa karja az úttest felé néz */
+  rotY: number
+}
+
 export interface Layout3D {
   kind: Scene['layout']
   rail?: Rail3D
@@ -136,6 +149,7 @@ export interface Layout3D {
   peds: Ped3D[]
   blocker?: { x: number; z: number }
   props?: Prop3D[]
+  furniture?: Furniture3D[]
   /** Visszapillantó tükör megjelenítése (hátulról érkező mentőautó) */
   mirror?: boolean
   /** Sziréna hangja */
@@ -630,8 +644,11 @@ function streetLayout(scene: Scene, rng: () => number, signs: SceneSignsFull, ca
       // Terelőkúpok ferdén a sávunkon át, mögöttük a munkaterület korláttal
       for (let i = 0; i < 6; i++) props.push({ kind: 'cone', at: [HALF - 0.3 - (i * (HALF - 0.6)) / 5, 7 - i * 1.3], rotY: 0 })
       props.push({ kind: 'barrier', at: [own + 0.2, 0.4], rotY: 0, size: [HALF - 0.5, 0] })
-      for (let z = -3; z > -30; z -= 4) props.push({ kind: 'cone', at: [0.35, z], rotY: 0 })
+      // A munkaterület mentén beton útelzáró elemek, egymás mellett
+      for (let z = -2.6; z > -28; z -= 1.56) props.push({ kind: 'jersey', at: [0.42, z], rotY: Math.PI / 2 })
       props.push({ kind: 'dirt', at: [own + 0.4, -12], rotY: 0, size: [2.2, 7] })
+      // Munkás a munkaterületen, a forgalom felé fordulva
+      props.push({ kind: 'worker', at: [own + 0.6, -7.5], rotY: Math.PI })
       posts.push({ codes: signs.mine, x: own + 0.2, z: 1.2, rotY: 0, size: 0.8 })
       stopZ = 16
       break
@@ -778,8 +795,45 @@ function frameYaw(l: Layout3D): number {
   return Math.max(-0.6, Math.min(0.6, (lo + hi) / 2))
 }
 
-export function buildLayout(scene: Scene): Layout3D {
+/** A fák és lámpák legalább ennyire vannak a táblaoszlopoktól és a lámpáktól (m) */
+const FURNITURE_CLEAR = 3
+/** Ilyen messzire a tábla előtt (a közeledés irányában) nem áll fa a tábla oldalán: a lombja eltakarná (m) */
+const TREE_SIGN_SHADOW = 25
+
+/**
+ * Lámpák és fák a járdákon, a szegély mellett, `spacing` méterenként, felváltva. Nem kerülnek a táblák és jelzőlámpák
+ * közelébe, és a tábla előtti szakaszon (a vezető és a tábla között) nem áll fa, hogy ne takarja el.
+ */
+function placeFurniture(l: Layout3D, spacing: number, rng: () => number): Furniture3D[] {
+  const out: Furniture3D[] = []
+  const blockers = [...l.signs.map((s) => ({ x: s.x, z: s.z })), ...l.lights.map((x) => ({ x: x.x, z: x.z }))]
+  let n = 0
+  for (const r of l.sidewalks) {
+    const alongZ = r.d >= r.w
+    const len = alongZ ? r.d : r.w
+    if (len < spacing) continue
+    // A szegélytől kb. 0,6 m-re, a járda úttest felőli oldalán
+    const kerb = alongZ ? r.x - Math.sign(r.x || 1) * (r.w / 2) : r.z - Math.sign(r.z || 1) * (r.d / 2)
+    const pos = kerb + Math.sign(alongZ ? r.x || 1 : r.z || 1) * 0.6
+    const start = (alongZ ? r.z : r.x) - len / 2 + spacing / 2 + rng() * 2
+    for (let p = start; p < (alongZ ? r.z : r.x) + len / 2 - 1; p += spacing) {
+      const x = alongZ ? pos : p
+      const z = alongZ ? p : pos
+      n++
+      const kind: Furniture3D['kind'] = n % 2 === 0 ? 'tree' : 'lamp'
+      if (blockers.some((b) => Math.hypot(b.x - x, b.z - z) < FURNITURE_CLEAR)) continue
+      if (kind === 'tree' && l.signs.some((s) => s.rotY === 0 && Math.sign(s.x) === Math.sign(x) && z - s.z > 0 && z - s.z < TREE_SIGN_SHADOW)) continue
+      // A lámpa karja az úttest felé
+      const rotY = alongZ ? (x > 0 ? Math.PI : 0) : z > 0 ? Math.PI / 2 : -Math.PI / 2
+      out.push({ kind, x, z, rotY })
+    }
+  }
+  return out
+}
+
+export function buildLayout(scene: Scene, furnitureSpacing = 18): Layout3D {
   const raw = buildRaw(scene)
+  raw.furniture = placeFurniture(raw, furnitureSpacing, seeded(`f${JSON.stringify(scene)}`))
   // Íven haladva a fejfordítást a körforgalom elrendezése adja meg. Táblagyakorlásnál a vezető nem fordul a tábla felé:
   // a kérdésnél már nem szabad látszania
   return raw.camera.arc || scene.roadSign ? raw : { ...raw, lookYaw: frameYaw(raw) }

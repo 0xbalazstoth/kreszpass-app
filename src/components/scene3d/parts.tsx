@@ -1,9 +1,14 @@
 import { useFrame, useLoader } from '@react-three/fiber'
 import { Suspense, useEffect, useMemo, useRef, type Ref } from 'react'
-import { CanvasTexture, RepeatWrapping, SRGBColorSpace, TextureLoader, type Group, type Mesh, type MeshBasicMaterial, type Texture } from 'three'
+import { InstancedMesh, MeshStandardMaterial, Object3D, RingGeometry, SRGBColorSpace, TextureLoader, type Group, type MeshBasicMaterial, type Texture } from 'three'
 import { signUrl } from '../../data/signs'
 import type { LightState } from '../../domain/questions'
 import { PED_LOOKS } from './looks'
+import { PERSON_MODELS } from './models'
+import { Person } from './people'
+import { carKindFor, groundPlane, roadPaint, scaleUv, surface, TILE_M, windowGlass, worldBox, type SurfaceName } from './materials'
+import { useQuality } from './quality'
+import { Car } from './vehicles'
 import { carPose, easeOut, type Building, type Car3D, type Layout3D, type Light3D, type Ped3D, type Rail3D, type Rect, type SignPost3D } from './layout'
 
 /** A közeledés 0..1 állása és az eltelt idő a kérdés megjelenése óta */
@@ -14,141 +19,214 @@ export interface Clock {
   elapsed(): number
 }
 
-const ASPHALT = '#4b5563'
-const SIDEWALK = '#c7ccd3'
-const GRASS = '#98b98a'
-const WHITE = '#f3f4f6'
 
 // ---------------------------------------------------------------- talaj, utak
 
-function Flat({ r, y, color }: { r: Rect; y: number; color: string }) {
+/** A járdák úttest felőli szegélye (a beton szegélykő a járda és az úttest között) */
+function kerbOf(r: Rect): Rect {
+  if (r.w >= r.d) {
+    const z = r.z - Math.sign(r.z || 1) * (r.d / 2)
+    return { x: r.x, z, w: r.w, d: 0.18 }
+  }
+  const x = r.x - Math.sign(r.x || 1) * (r.w / 2)
+  return { x, z: r.z, w: 0.18, d: r.d }
+}
+
+function FlatSurface({ r, y, name, normalMaps }: { r: Rect; y: number; name: SurfaceName; normalMaps: boolean }) {
+  const geo = useMemo(() => groundPlane(r.w, r.d, TILE_M[name]), [r.w, r.d, name])
   return (
     // A fektetett sík Z körüli forgatása a világ Y körüli forgatásának felel meg
-    <mesh position={[r.x, y, r.z]} rotation={[-Math.PI / 2, 0, r.rotY ?? 0]}>
-      <planeGeometry args={[r.w, r.d]} />
-      <meshStandardMaterial color={color} />
-    </mesh>
+    <mesh position={[r.x, y, r.z]} rotation={[-Math.PI / 2, 0, r.rotY ?? 0]} geometry={geo} material={surface(name, { normalMaps })} receiveShadow />
   )
 }
 
+function RaisedSurface({ r, h, name, normalMaps }: { r: Rect; h: number; name: SurfaceName; normalMaps: boolean }) {
+  const geo = useMemo(() => worldBox(r.w, h, r.d, TILE_M[name]), [r.w, r.d, h, name])
+  return <mesh position={[r.x, h / 2, r.z]} rotation={[0, r.rotY ?? 0, 0]} geometry={geo} material={surface(name, { normalMaps })} receiveShadow castShadow />
+}
+
 export function Ground({ layout }: { layout: Pick<Layout3D, 'asphalt' | 'sidewalks' | 'markings' | 'ring'> }) {
+  const q = useQuality()
+  const nm = q.normalMaps
+  const grass = useMemo(() => groundPlane(400, 400, TILE_M.grass), [])
+  const ringGeo = useMemo(() => {
+    if (!layout.ring) return null
+    const g = new RingGeometry(layout.ring.inner, layout.ring.outer, 72)
+    // A gyűrű UV-je 0..1 a külső átmérőn: méterre skálázva
+    scaleUv(g, (layout.ring.outer * 2) / TILE_M.asphalt, (layout.ring.outer * 2) / TILE_M.asphalt)
+    return g
+  }, [layout.ring])
   return (
     <group>
-      <mesh position={[0, -0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[400, 400]} />
-        <meshStandardMaterial color={GRASS} />
-      </mesh>
+      <mesh position={[0, -0.02, 0]} rotation={[-Math.PI / 2, 0, 0]} geometry={grass} material={surface('grass', { normalMaps: nm })} receiveShadow />
       {layout.asphalt.map((r, i) => (
-        <Flat key={`a${i}`} r={r} y={0} color={ASPHALT} />
+        <FlatSurface key={`a${i}`} r={r} y={0} name="asphalt" normalMaps={nm} />
       ))}
-      {layout.ring && (
+      {layout.ring && ringGeo && (
         <>
-          <mesh position={[0, 0.002, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-            <ringGeometry args={[layout.ring.inner, layout.ring.outer, 72]} />
-            <meshStandardMaterial color={ASPHALT} />
+          <mesh position={[0, 0.002, 0]} rotation={[-Math.PI / 2, 0, 0]} geometry={ringGeo} material={surface('asphalt', { normalMaps: nm })} receiveShadow />
+          {/* Középsziget: szegéllyel körülvett, füves, alacsony domb */}
+          <mesh position={[0, 0.12, 0]} material={surface('kerb', { normalMaps: nm })} receiveShadow castShadow>
+            <cylinderGeometry args={[layout.ring.inner, layout.ring.inner, 0.24, 64]} />
           </mesh>
-          <mesh position={[0, 0.2, 0]}>
-            <cylinderGeometry args={[layout.ring.inner, layout.ring.inner, 0.4, 64]} />
-            <meshStandardMaterial color="#6fa45a" />
+          <mesh position={[0, 0.25, 0]} material={surface('grass', { normalMaps: nm })} receiveShadow>
+            <cylinderGeometry args={[layout.ring.inner - 0.25, layout.ring.inner - 0.25, 0.04, 64]} />
           </mesh>
-          <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-            <ringGeometry args={[layout.ring.inner, layout.ring.inner + 0.25, 72]} />
-            <meshBasicMaterial color={WHITE} />
+          <mesh position={[0, 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]} material={roadPaint()}>
+            <ringGeometry args={[layout.ring.inner + 0.05, layout.ring.inner + 0.25, 72]} />
           </mesh>
         </>
       )}
       {layout.sidewalks.map((r, i) => (
-        <mesh key={`s${i}`} position={[r.x, 0.075, r.z]}>
-          <boxGeometry args={[r.w, 0.15, r.d]} />
-          <meshStandardMaterial color={SIDEWALK} />
-        </mesh>
+        <group key={`s${i}`}>
+          <RaisedSurface r={r} h={0.15} name="pavement" normalMaps={nm} />
+          <RaisedSurface r={kerbOf(r)} h={0.17} name="kerb" normalMaps={nm} />
+        </group>
       ))}
       {layout.markings.map((r, i) => (
-        <mesh key={`m${i}`} position={[r.x, 0.012, r.z]} rotation={[-Math.PI / 2, 0, r.rotY ?? 0]}>
+        <mesh key={`m${i}`} position={[r.x, 0.012, r.z]} rotation={[-Math.PI / 2, 0, r.rotY ?? 0]} material={roadPaint()} receiveShadow>
           <planeGeometry args={[r.w, r.d]} />
-          <meshBasicMaterial color={WHITE} />
         </mesh>
       ))}
     </group>
   )
 }
 
-/** Egy ablaktengely szélessége és egy emelet magassága (m): ekkora a homlokzat-minta egy ismétlése */
-const BAY_M = 3.5
+// ---------------------------------------------------------------- épületek
+
+/** Ablaktengely és emeletmagasság (m) */
+const BAY_M = 3.3
 const FLOOR_M = 3.2
 
-/**
- * Homlokzat-minta (egy emelet, egy ablak), fehér alapon, így a ház színével szorozva színeződik.
- * Ablakok nélkül a közeli házfal egyetlen nagy, üres szürke téglalapnak látszott.
- */
-let facadeCanvas: HTMLCanvasElement | null = null
-function getFacadeCanvas(): HTMLCanvasElement {
-  if (facadeCanvas) return facadeCanvas
-  const c = document.createElement('canvas')
-  c.width = 64
-  c.height = 64
-  const g = c.getContext('2d')
-  if (g) {
-    g.fillStyle = '#ffffff'
-    g.fillRect(0, 0, 64, 64)
-    // Emeletek közti párkány
-    g.fillStyle = '#d9d4cc'
-    g.fillRect(0, 60, 64, 4)
-    // Ablakkeret, üveg (felül világosabb tükröződés), könyöklő
-    g.fillStyle = '#ece8e1'
-    g.fillRect(17, 10, 30, 40)
-    g.fillStyle = '#34414f'
-    g.fillRect(20, 13, 24, 34)
-    g.fillStyle = '#56687c'
-    g.fillRect(20, 13, 24, 12)
-    g.fillStyle = '#ece8e1'
-    g.fillRect(31, 13, 2, 34)
-    g.fillStyle = '#c9c3b9'
-    g.fillRect(15, 50, 34, 3)
-  }
-  facadeCanvas = c
-  return c
+type FacadeKind = { name: SurfaceName; tint?: string }
+
+/** A ház homlokzata a színe alapján, determinisztikusan: többnyire színezett vakolat, néha tégla */
+function facadeOf(b: Building): FacadeKind {
+  let h = 0
+  const key = `${b.color}${Math.round(b.x)}${Math.round(b.z)}`
+  for (let i = 0; i < key.length; i++) h = (h * 31 + key.charCodeAt(i)) | 0
+  const r = Math.abs(h) % 10
+  if (r < 2) return { name: 'brick' }
+  if (r < 4) return { name: 'plaster_rough', tint: b.color }
+  if (r < 5) return { name: 'plaster_grey' }
+  return { name: 'plaster', tint: b.color }
 }
 
-function facadeTexture(widthM: number, heightM: number): CanvasTexture {
-  const t = new CanvasTexture(getFacadeCanvas())
-  t.colorSpace = SRGBColorSpace
-  t.wrapS = RepeatWrapping
-  t.wrapT = RepeatWrapping
-  t.anisotropy = 8
-  t.repeat.set(Math.max(1, Math.round(widthM / BAY_M)), Math.max(1, Math.round(heightM / FLOOR_M)))
-  return t
-}
+const roofMat = new MeshStandardMaterial({ color: '#5b5f66', roughness: 0.95 })
+const corniceMat = new MeshStandardMaterial({ color: '#e7e2d8', roughness: 0.8 })
+const frameMat = new MeshStandardMaterial({ color: '#f1efe9', roughness: 0.6 })
+const shopMat = new MeshStandardMaterial({ color: '#2b2f35', roughness: 0.4, metalness: 0.3 })
 
-function BuildingBox({ b }: { b: Building }) {
-  // Box oldalai: +X, −X, +Y, −Y, +Z, −Z. A ±X oldalak a Z irányú (d), a ±Z oldalak az X irányú (w) kiterjedésűek.
-  const tex = useMemo(() => ({ alongZ: facadeTexture(b.d, b.h), alongX: facadeTexture(b.w, b.h) }), [b.d, b.w, b.h])
-  useEffect(
-    () => () => {
-      tex.alongZ.dispose()
-      tex.alongX.dispose()
-    },
-    [tex],
-  )
+function BuildingBox({ b, normalMaps }: { b: Building; normalMaps: boolean }) {
+  const f = facadeOf(b)
+  const geo = useMemo(() => worldBox(b.w, b.h, b.d, TILE_M[f.name]), [b.w, b.h, b.d, f.name])
+  const wall = surface(f.name, { tint: f.tint, normalMaps })
+  // Box oldalai: +X, −X, +Y (tető), −Y, +Z, −Z
   return (
-    <mesh position={[b.x, b.h / 2, b.z]}>
-      <boxGeometry args={[b.w, b.h, b.d]} />
-      <meshStandardMaterial attach="material-0" color={b.color} map={tex.alongZ} />
-      <meshStandardMaterial attach="material-1" color={b.color} map={tex.alongZ} />
-      <meshStandardMaterial attach="material-2" color="#8a8f96" />
-      <meshStandardMaterial attach="material-3" color={b.color} />
-      <meshStandardMaterial attach="material-4" color={b.color} map={tex.alongX} />
-      <meshStandardMaterial attach="material-5" color={b.color} map={tex.alongX} />
-    </mesh>
+    <group>
+      <mesh position={[b.x, b.h / 2, b.z]} geometry={geo} material={[wall, wall, roofMat, wall, wall, wall]} castShadow receiveShadow />
+      {/* Párkány a tető szélén */}
+      <mesh position={[b.x, b.h - 0.15, b.z]} material={corniceMat} castShadow>
+        <boxGeometry args={[b.w + 0.3, 0.3, b.d + 0.3]} />
+      </mesh>
+      {/* Lábazat */}
+      <mesh position={[b.x, 0.35, b.z]} material={surface('plaster_grey', { normalMaps })} receiveShadow>
+        <boxGeometry args={[b.w + 0.06, 0.7, b.d + 0.06]} />
+      </mesh>
+    </group>
+  )
+}
+
+/**
+ * Ablakok minden homlokzaton, egy-egy közös (instanced) hálóban: keret, üveg (az égboltot tükrözi), párkány,
+ * a földszinten nagyobb kirakat. Így több ezer ablak is kevés rajzolási hívás.
+ */
+function Windows({ list }: { list: Building[] }) {
+  const items = useMemo(() => {
+    const out: { x: number; y: number; z: number; rot: number; shop: boolean }[] = []
+    for (const b of list) {
+      const faces = [
+        { len: b.d, nx: 1, nz: 0, rot: Math.PI / 2 },
+        { len: b.d, nx: -1, nz: 0, rot: -Math.PI / 2 },
+        { len: b.w, nx: 0, nz: 1, rot: 0 },
+        { len: b.w, nx: 0, nz: -1, rot: Math.PI },
+      ]
+      const floors = Math.max(1, Math.floor((b.h - 0.8) / FLOOR_M))
+      for (const f of faces) {
+        const cols = Math.floor(f.len / BAY_M)
+        if (cols < 1) continue
+        const step = f.len / cols
+        for (let c = 0; c < cols; c++) {
+          const along = -f.len / 2 + step * (c + 0.5)
+          for (let fl = 0; fl < floors; fl++) {
+            const off = f.nx ? b.w / 2 : b.d / 2
+            const x = b.x + f.nx * off + (f.nz ? along : 0)
+            const z = b.z + f.nz * off + (f.nx ? along : 0)
+            out.push({ x, z, y: fl === 0 ? 1.55 : fl * FLOOR_M + 1.75, rot: f.rot, shop: fl === 0 })
+          }
+        }
+      }
+    }
+    return out
+  }, [list])
+  const frames = useRef<InstancedMesh>(null)
+  const glassRef = useRef<InstancedMesh>(null)
+  const sills = useRef<InstancedMesh>(null)
+  const shops = useRef<InstancedMesh>(null)
+  useEffect(() => {
+    const o = new Object3D()
+    let iw = 0
+    let is = 0
+    for (const it of items) {
+      // A homlokzat síkja előtt néhány centivel
+      const place = (mesh: InstancedMesh | null, i: number, out: number, dy = 0, sx = 1, sy = 1) => {
+        if (!mesh) return
+        o.position.set(it.x + Math.sin(it.rot) * out, it.y + dy, it.z + Math.cos(it.rot) * out)
+        o.rotation.set(0, it.rot, 0)
+        o.scale.set(sx, sy, 1)
+        o.updateMatrix()
+        mesh.setMatrixAt(i, o.matrix)
+      }
+      if (it.shop) {
+        place(shops.current, is, 0.03, 0, 1, 1)
+        is++
+      } else {
+        place(frames.current, iw, 0.02)
+        place(glassRef.current, iw, 0.045)
+        place(sills.current, iw, 0.08, -0.86)
+        iw++
+      }
+    }
+    for (const m of [frames.current, glassRef.current, sills.current, shops.current]) if (m) m.instanceMatrix.needsUpdate = true
+  }, [items])
+  const upper = items.filter((i) => !i.shop).length
+  const ground = items.length - upper
+  return (
+    <group>
+      <instancedMesh ref={frames} args={[undefined, frameMat, upper]}>
+        <planeGeometry args={[1.32, 1.72]} />
+      </instancedMesh>
+      <instancedMesh ref={glassRef} args={[undefined, windowGlass(), upper]}>
+        <planeGeometry args={[1.12, 1.52]} />
+      </instancedMesh>
+      <instancedMesh ref={sills} args={[undefined, corniceMat, upper]} castShadow>
+        <boxGeometry args={[1.45, 0.07, 0.14]} />
+      </instancedMesh>
+      <instancedMesh ref={shops} args={[undefined, shopMat, ground]}>
+        <planeGeometry args={[2.4, 2.3]} />
+      </instancedMesh>
+    </group>
   )
 }
 
 export function Buildings({ list }: { list: Building[] }) {
+  const q = useQuality()
   return (
     <group>
       {list.map((b, i) => (
-        <BuildingBox key={i} b={b} />
+        <BuildingBox key={i} b={b} normalMaps={q.normalMaps} />
       ))}
+      <Windows list={list} />
     </group>
   )
 }
@@ -353,53 +431,9 @@ export function TrafficLight({ light }: { light: Light3D }) {
 
 // ---------------------------------------------------------------- járművek, gyalogosok
 
+/** Személyautó (a régi, egyszerű doboz-modell helyett a valósághű arányú modell) */
 export function CarModel({ color, blink }: { color: string; blink?: 'left' | 'right' }) {
-  const left = useRef<Mesh>(null)
-  const right = useRef<Mesh>(null)
-  useFrame(({ clock }) => {
-    const on = Math.floor(clock.elapsedTime * 2.5) % 2 === 0
-    if (left.current) left.current.visible = blink === 'left' && on
-    if (right.current) right.current.visible = blink === 'right' && on
-  })
-  return (
-    <group>
-      <mesh position={[0, 0.62, 0]}>
-        <boxGeometry args={[1.8, 0.7, 4.2]} />
-        <meshStandardMaterial color={color} metalness={0.3} roughness={0.45} />
-      </mesh>
-      <mesh position={[0, 1.22, 0.3]}>
-        <boxGeometry args={[1.62, 0.55, 2.1]} />
-        <meshStandardMaterial color="#1f2937" metalness={0.5} roughness={0.2} />
-      </mesh>
-      {[
-        [-0.9, -1.35],
-        [0.9, -1.35],
-        [-0.9, 1.35],
-        [0.9, 1.35],
-      ].map(([x, z], i) => (
-        <mesh key={i} position={[x, 0.33, z]} rotation={[0, 0, Math.PI / 2]}>
-          <cylinderGeometry args={[0.33, 0.33, 0.24, 16]} />
-          <meshStandardMaterial color="#111" />
-        </mesh>
-      ))}
-      {/* Fényszórók elöl (−Z) */}
-      {[-0.6, 0.6].map((x) => (
-        <mesh key={x} position={[x, 0.68, -2.11]}>
-          <boxGeometry args={[0.35, 0.14, 0.02]} />
-          <meshBasicMaterial color="#fffbe6" />
-        </mesh>
-      ))}
-      {/* Irányjelzők: a modell bal oldala a −X (ha −Z felé néz) */}
-      <mesh ref={left} position={[-0.86, 0.72, -2.12]} visible={false}>
-        <boxGeometry args={[0.18, 0.12, 0.03]} />
-        <meshBasicMaterial color="#f59e0b" toneMapped={false} />
-      </mesh>
-      <mesh ref={right} position={[0.86, 0.72, -2.12]} visible={false}>
-        <boxGeometry args={[0.18, 0.12, 0.03]} />
-        <meshBasicMaterial color="#f59e0b" toneMapped={false} />
-      </mesh>
-    </group>
-  )
+  return <Car color={color} kind={carKindFor(color)} blink={blink} />
 }
 
 export function PartnerCar({ car, clock, blink }: { car: Car3D; clock: Clock; blink?: 'left' | 'right' }) {
@@ -445,11 +479,11 @@ export function Van({ x, z, ambulance }: { x: number; z: number; ambulance?: boo
       {/* Raktér és vezetőfülke, alul sötét alváz */}
       <mesh position={[0, 1.5, 0.8]}>
         <boxGeometry args={[2.0, 2.1, 4.0]} />
-        <meshStandardMaterial color={body} roughness={0.5} metalness={0.2} />
+        <meshPhysicalMaterial color={body} roughness={0.35} metalness={0.4} clearcoat={1} clearcoatRoughness={0.1} />
       </mesh>
       <mesh position={[0, 1.22, -2.0]}>
         <boxGeometry args={[1.94, 1.55, 1.6]} />
-        <meshStandardMaterial color={body} roughness={0.5} metalness={0.2} />
+        <meshPhysicalMaterial color={body} roughness={0.35} metalness={0.4} clearcoat={1} clearcoatRoughness={0.1} />
       </mesh>
       <mesh position={[0, 0.3, 0]}>
         <boxGeometry args={[1.9, 0.3, 5.5]} />
@@ -499,13 +533,13 @@ export function Van({ x, z, ambulance }: { x: number; z: number; ambulance?: boo
       {/* Fülke: szélvédő, oldalablakok, tükrök, fényszórók */}
       <mesh position={[0, 1.62, -2.805]}>
         <boxGeometry args={[1.75, 0.62, 0.02]} />
-        <meshStandardMaterial color={VAN_GLASS} metalness={0.5} roughness={0.2} />
+        <meshPhysicalMaterial color={VAN_GLASS} metalness={0.2} roughness={0.05} clearcoat={1} envMapIntensity={1.4} />
       </mesh>
       {[-1, 1].map((s) => (
         <group key={`cab${s}`}>
           <mesh position={[s * 0.975, 1.6, -2.05]}>
             <boxGeometry args={[0.01, 0.5, 1.1]} />
-            <meshStandardMaterial color={VAN_GLASS} metalness={0.5} roughness={0.2} />
+            <meshPhysicalMaterial color={VAN_GLASS} metalness={0.2} roughness={0.05} clearcoat={1} envMapIntensity={1.4} />
           </mesh>
           <mesh position={[s * 1.12, 1.55, -1.6]}>
             <boxGeometry args={[0.2, 0.28, 0.08]} />
@@ -541,7 +575,7 @@ export function Van({ x, z, ambulance }: { x: number; z: number; ambulance?: boo
         <group key={`rear${s}`}>
           <mesh position={[s * 0.48, 2.1, rearZ + 0.006]}>
             <boxGeometry args={[0.7, 0.45, 0.01]} />
-            <meshStandardMaterial color={VAN_GLASS} metalness={0.5} roughness={0.2} />
+            <meshPhysicalMaterial color={VAN_GLASS} metalness={0.2} roughness={0.05} clearcoat={1} envMapIntensity={1.4} />
           </mesh>
           <mesh position={[s * 0.09, 1.35, rearZ + 0.02]}>
             <boxGeometry args={[0.05, 0.2, 0.04]} />
@@ -655,8 +689,11 @@ export function Pedestrian({ ped, clock, index }: { ped: Ped3D; clock: Clock; in
   const legR = useRef<Group>(null)
   const armL = useRef<Group>(null)
   const armR = useRef<Group>(null)
+  /** A pillanatnyi haladási sebesség (m/s): ehhez igazodik a valósághű modell lépése */
+  const speed = useRef(0)
+  const last = useRef<[number, number] | null>(null)
   const look = PED_LOOKS[index % PED_LOOKS.length]
-  useFrame(({ clock: c }) => {
+  useFrame(({ clock: c }, dt) => {
     if (!ref.current) return
     let f = 0
     if (ped.state === 'crossing') {
@@ -665,12 +702,14 @@ export function Pedestrian({ ped, clock, index }: { ped: Ped3D; clock: Clock; in
     }
     const x = ped.from[0] + (ped.to[0] - ped.from[0]) * f
     const z = ped.from[1] + (ped.to[1] - ped.from[1]) * f
+    if (last.current && dt > 0) speed.current = Math.hypot(x - last.current[0], z - last.current[1]) / dt
+    last.current = [x, z]
     const walking = ped.state === 'crossing' && f < 1
     const t = c.elapsedTime
-    // Lépésenként kétszer emelkedik a test; álló helyzetben alig észrevehetően mozog
+    // Az egyszerű (tartalék) alak lépése: lépésenként kétszer emelkedik a test
     const swing = walking ? Math.sin(t * 6.5) : Math.sin(t * 1.3) * 0.04
     const bob = walking ? Math.abs(Math.cos(t * 6.5)) * 0.035 : 0
-    ref.current.position.set(x, bob + (ped.state === 'waiting' ? 0.15 : 0), z)
+    ref.current.position.set(x, (legL.current ? bob : 0) + (ped.state === 'waiting' ? 0.15 : 0), z)
     if (legL.current) legL.current.rotation.x = swing * 0.5
     if (legR.current) legR.current.rotation.x = -swing * 0.5
     if (armL.current) armL.current.rotation.x = -swing * 0.45
@@ -678,7 +717,12 @@ export function Pedestrian({ ped, clock, index }: { ped: Ped3D; clock: Clock; in
   })
   return (
     <group ref={ref} position={[ped.from[0], 0, ped.from[1]]} rotation={[0, ped.rotY, 0]}>
-      <HumanFigure look={look} limbs={{ legL, legR, armL, armR }} />
+      <Person
+        name={PERSON_MODELS[index % PERSON_MODELS.length]}
+        height={1.66 + (index % 3) * 0.06}
+        speed={() => speed.current}
+        fallback={<HumanFigure look={look} limbs={{ legL, legR, armL, armR }} />}
+      />
     </group>
   )
 }

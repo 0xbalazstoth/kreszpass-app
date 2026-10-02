@@ -3,7 +3,11 @@ import { useMemo, useState } from 'react'
 import type { Scene } from '../../domain/questions'
 import { buildLayout } from './layout'
 import { Buildings, DriverCamera, Ground, PartnerCar, Pedestrian, RailBarrier, RailLights, RailTrack, SignPost, TrafficLight, Van, type Clock } from './parts'
+import { AutoShadows } from './AutoShadows'
+import { StreetFurniture } from './Furniture'
 import { Props, RearMirror } from './props'
+import { useQuality } from './quality'
+import { SceneLook } from './SceneLook'
 import { useSiren } from './siren'
 
 interface Props {
@@ -24,7 +28,8 @@ const TURN_HUD: Record<Scene['turn'], { arrow: string; text: string }> = {
  * Külön csomagba kerül (React.lazy), hogy a three.js csak itt töltődjön be.
  */
 export default function Scene3D({ scene, animate, approachMs }: Props) {
-  const layout = useMemo(() => buildLayout(scene), [scene])
+  const quality = useQuality()
+  const layout = useMemo(() => buildLayout(scene, quality.furnitureSpacing), [scene, quality.furnitureSpacing])
   // A közeledés kezdete: a komponens létrejöttekor rögzítjük
   const [startedAt] = useState(() => performance.now() - (animate ? 0 : approachMs))
   const clock = useMemo<Clock>(
@@ -42,15 +47,13 @@ export default function Scene3D({ scene, animate, approachMs }: Props) {
   return (
     <div className="scene3d">
       <Canvas
-        dpr={[1, 2]}
+        dpr={quality.dpr}
+        shadows
         gl={{ antialias: true, powerPreference: 'high-performance' }}
         camera={{ fov: 68, near: 0.1, far: 320, position: [layout.camera.x, layout.camera.y, layout.camera.startZ] }}
         aria-label="3D nézet a vezetőülésből"
       >
-        <color attach="background" args={['#bcd6ec']} />
-        <fog attach="fog" args={['#bcd6ec', 70, 200]} />
-        <hemisphereLight args={['#ffffff', '#6b7d5c', 1.15]} />
-        <directionalLight position={[30, 60, 25]} intensity={1.5} />
+        <SceneLook quality={quality} focus={[0, 0, (layout.camera.startZ + layout.camera.stopZ) / 2 - 10]} />
         <Ground layout={layout} />
         <Buildings list={layout.buildings} />
         {layout.rail && (
@@ -75,6 +78,8 @@ export default function Scene3D({ scene, animate, approachMs }: Props) {
         ))}
         {layout.blocker && <Van x={layout.blocker.x} z={layout.blocker.z} />}
         {layout.props && <Props list={layout.props} clock={clock} />}
+        {layout.furniture && <StreetFurniture list={layout.furniture} />}
+        <AutoShadows enabled={quality.shadows > 0} />
         <DriverCamera layout={layout} clock={clock} />
         {layout.mirror && <RearMirror />}
       </Canvas>
