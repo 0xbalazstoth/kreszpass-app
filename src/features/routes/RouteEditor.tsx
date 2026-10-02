@@ -10,6 +10,7 @@ import { parseTrackFile, snapToRoads } from '../../data/routing'
 import { signForSituation } from '../../data/signs'
 import { normalizeStreetName } from '../../data/streetRoute'
 import { cleanRows, routeFromStreets } from '../../data/streetRouteSource'
+import { randomRouteIn } from '../../data/randomRouteSource'
 import { generateSituations, placeOnRoute } from '../../data/situations'
 import { allPromptVariants, KIND_LABEL, TURN_LABEL } from '../../domain/questions'
 import type { RoundaboutInfo, Route, Situation, SituationKind, Turn } from '../../domain/types'
@@ -60,6 +61,10 @@ export function RouteEditor({ routeId: param }: Props) {
   const abortRef = useRef<AbortController | null>(null)
   const [cancellable, setCancellable] = useState(false)
   const [streetRows, setStreetRows] = useState<EditableRow[]>(() => [newRow(), newRow()])
+  const [randomPlace, setRandomPlace] = useState('')
+  const [randomKm, setRandomKm] = useState(10)
+  /** Az utolsó véletlen útvonal helye: amíg nincs más módosítás, egy kattintással kérhető másik */
+  const [randomOf, setRandomOf] = useState<string | null>(null)
 
   const liveSituations = useLiveQuery(() => situationsOf(routeId), [routeId])
   const situations = useMemo(() => liveSituations ?? [], [liveSituations])
@@ -213,6 +218,29 @@ export function RouteEditor({ routeId: param }: Props) {
         `Útvonal az utcákból: ${formatDistance(r.lengthM)}, ${r.matched.length} utca, ${r.junctions.length} kanyarodás.` +
           (renamed.length ? ` Értelmezve: ${renamed.join(', ')}.` : '') +
           ' Most jöhet a helyzetfelismerés.',
+      )
+    })
+
+  const onRandom = () =>
+    run('Véletlen útvonal…', async () => {
+      const ctrl = new AbortController()
+      abortRef.current = ctrl
+      setCancellable(true)
+      const place = randomPlace.trim()
+      setRandomOf(null)
+      const r = await randomRouteIn(place, randomKm * 1000, { signal: ctrl.signal, onStatus: setBusy })
+      setLine(r.line)
+      setWaypoints(r.junctions)
+      // Az utcalista a vizsgaútvonalak szokásos leírása: a település az első sorban, utána csak az utcák
+      setStreetRows([...r.streets.map((street, i) => newRow(i === 0 ? place : '', street)), newRow()])
+      if (!name.trim() || name === `Véletlen útvonal, ${randomOf}`) setName(`Véletlen útvonal, ${place}`)
+      setRandomOf(place)
+      setDirty(true)
+      setMode('select')
+      setFitKey(`random-${Date.now()}`)
+      setStatus(
+        `Véletlen útvonal (${r.placeName.split(',')[0]}): ${formatDistance(r.lengthM)}, ${r.streets.length} utca. ` +
+          'Ha jó, jöhet a helyzetfelismerés.',
       )
     })
 
@@ -390,6 +418,39 @@ export function RouteEditor({ routeId: param }: Props) {
             />
           </div>
           <div className="streets">
+            <strong>Véletlen útvonal</strong>
+            <p className="hint">
+              Gyakorláshoz: körút egy település vagy kerület utcáin, ugyanoda ér vissza, ahonnan indult. Nagy területen (pl. egész
+              Budapest) minden kattintás a város más részére visz.
+            </p>
+            <div className="random-route">
+              <label>
+                Hol?
+                <input
+                  value={randomPlace}
+                  onChange={(e) => setRandomPlace(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && randomPlace.trim() && !busy && onRandom()}
+                  placeholder="pl. Újpest, Budapest XI. kerület, Szeged"
+                />
+              </label>
+              <label>
+                Hossz
+                <select value={randomKm} onChange={(e) => setRandomKm(Number(e.target.value))}>
+                  {[5, 10, 15].map((km) => (
+                    <option key={km} value={km}>
+                      kb. {km} km
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+            <div className="actions">
+              <button className="btn primary" onClick={onRandom} disabled={!!busy || !randomPlace.trim()}>
+                Véletlen útvonal
+              </button>
+            </div>
+          </div>
+          <div className="streets">
             <strong>Utcák alapján</strong>
             <p className="hint">
               Soronként a vizsgaútvonal egy utcája vagy útja, sorrendben (útszám is lehet: „1-es út”, „M0”). A települést elég az első
@@ -464,6 +525,13 @@ export function RouteEditor({ routeId: param }: Props) {
           </div>
         )}
         {status && <p className="status ok">{status}</p>}
+        {randomOf && !busy && situations.length === 0 && (
+          <div className="actions">
+            <button className="btn" onClick={onRandom}>
+              Másik véletlen útvonal
+            </button>
+          </div>
+        )}
         {error && <p className="status error">{error}</p>}
 
         {situations.length > 0 && (

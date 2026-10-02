@@ -283,6 +283,15 @@ textarea {
   padding-top: 12px;
   border-top: 1px dashed var(--border);
 }
+.random-route {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+}
+.random-route label {
+  display: grid;
+  gap: 4px;
+}
 .street-rows {
   display: grid;
   gap: 6px;

@@ -101,13 +101,13 @@ function matchEntries(entries: string[], ways: OsmWay[]): Entry[] {
 
 // ---------------------------------------------------------------- úthálózat
 
-interface Edge {
+export interface Edge {
   to: number
   len: number
   way: number
 }
 
-interface Graph {
+export interface Graph {
   out: Map<number, Edge[]>
   /** Minden szomszédság irány nélkül (a kezdő szakasz visszafelé kereséséhez) */
   inc: Map<number, Edge[]>
@@ -124,7 +124,7 @@ function isOneway(w: OsmWay): 1 | -1 | 0 {
   return 0
 }
 
-function buildGraph(ways: OsmWay[]): Graph {
+export function buildGraph(ways: OsmWay[]): Graph {
   const g: Graph = { out: new Map(), inc: new Map(), coord: new Map(), waysAt: new Map(), connector: new Set() }
   const push = (m: Map<number, Edge[]>, k: number, e: Edge) => {
     const list = m.get(k)
@@ -162,7 +162,7 @@ function buildGraph(ways: OsmWay[]): Graph {
 }
 
 /** Egyszerű bináris kupac a Dijkstra-kereséshez */
-class Heap<T> {
+export class Heap<T> {
   private items: Array<{ k: number; v: T }> = []
   get size() {
     return this.items.length

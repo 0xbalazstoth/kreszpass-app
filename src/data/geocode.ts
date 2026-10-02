@@ -1,3 +1,4 @@
+import type { MultiPolygon, Polygon } from 'geojson'
 import type { BBox } from '../lib/geo'
 
 /**
@@ -17,6 +18,8 @@ export interface GeoResult {
   lat: number
   /** [nyugat, dél, kelet, észak] */
   bbox: BBox
+  /** A terület határa (település, kerület), ha kértük és van */
+  area?: Polygon | MultiPolygon
 }
 
 type FetchLike = typeof fetch
@@ -34,9 +37,13 @@ interface NominatimHit {
   lat: string
   lon: string
   boundingbox: [string, string, string, string]
+  geojson?: { type: string }
 }
 
-export async function geocode(query: string, opts: { signal?: AbortSignal; fetchImpl?: FetchLike; limit?: number } = {}): Promise<GeoResult[]> {
+export async function geocode(
+  query: string,
+  opts: { signal?: AbortSignal; fetchImpl?: FetchLike; limit?: number; area?: boolean } = {},
+): Promise<GeoResult[]> {
   const fetchImpl = opts.fetchImpl ?? fetch
   const wait = lastRequest + MIN_GAP_MS - Date.now()
   if (wait > 0) await sleep(wait)
@@ -48,6 +55,11 @@ export async function geocode(query: string, opts: { signal?: AbortSignal; fetch
     limit: String(opts.limit ?? 5),
     'accept-language': 'hu',
   })
+  if (opts.area) {
+    // A határ egyszerűsítve (kb. 50 m pontossággal), hogy kicsi maradjon a válasz
+    params.set('polygon_geojson', '1')
+    params.set('polygon_threshold', '0.0005')
+  }
   const timeout = AbortSignal.timeout(TIMEOUT_MS)
   let res: Response
   try {
@@ -60,6 +72,7 @@ export async function geocode(query: string, opts: { signal?: AbortSignal; fetch
   const hits = (await res.json()) as NominatimHit[]
   return hits.map((h) => {
     const [s, n, w, e] = h.boundingbox.map(Number)
-    return { name: h.display_name, lng: Number(h.lon), lat: Number(h.lat), bbox: [w, s, e, n] }
+    const area = h.geojson?.type === 'Polygon' || h.geojson?.type === 'MultiPolygon' ? (h.geojson as Polygon | MultiPolygon) : undefined
+    return { name: h.display_name, lng: Number(h.lon), lat: Number(h.lat), bbox: [w, s, e, n], ...(area ? { area } : {}) }
   })
 }
