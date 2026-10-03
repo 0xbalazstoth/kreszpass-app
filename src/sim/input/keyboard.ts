@@ -48,29 +48,51 @@ const STEER_RATE = 1.6
 const RETURN_RATE = 3
 const PEDAL_RATE = 3
 
+/**
+ * A billentyű neve a rajta lévő betű szerint (a magyar QWERTZ billentyűzeten a Z és az Y helyet cserél, a fizikai
+ * helyet jelentő `code` ott Y-t mondana a Z-re). Betűn és számon kívül (nyilak, Szóköz, Esc) a fizikai hely számít.
+ */
+function keyName(e: KeyboardEvent): string {
+  if (/^[a-z]$/i.test(e.key)) return `Key${e.key.toUpperCase()}`
+  if (/^[0-9]$/.test(e.key)) return `Digit${e.key}`
+  return e.code
+}
+
 export class KeyboardInput {
   private down = new Set<string>()
+  /** Lenyomott fizikai billentyű → a neve lenyomáskor (felengedéskor ugyanazt vesszük ki, ha közben a Shift változott) */
+  private names = new Map<string, string>()
   private actions: SimAction[] = []
   private ui: string[] = []
   private ctl: Controls = { throttle: 0, brake: 0, steer: 0, handbrake: false }
 
   onKeyDown = (e: KeyboardEvent): void => {
-    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement) return
-    if (e.code in ACTION_KEYS || e.code in LOOK_KEYS || /^(Arrow|Key[WASD]|Space)/.test(e.code)) e.preventDefault()
+    // Szövegmezőben gépelés nem vezetés
+    if (/^(INPUT|SELECT|TEXTAREA)$/.test((e.target as Element | null)?.tagName ?? '')) return
+    // Böngésző- és rendszer-gyorsbillentyűk (Cmd/Ctrl + betű) maradjanak a böngészőé
+    if (e.metaKey || e.ctrlKey) return
+    const k = keyName(e)
+    if (k in ACTION_KEYS || k in LOOK_KEYS || /^(Arrow|Key[WASD]|Space)/.test(k)) e.preventDefault()
     if (e.repeat) return
-    this.down.add(e.code)
-    const a = ACTION_KEYS[e.code]
+    this.names.set(e.code, k)
+    this.down.add(k)
+    const a = ACTION_KEYS[k]
     if (a) this.actions.push(a)
-    if (e.code === 'KeyV' || e.code === 'Escape') this.ui.push(e.code)
+    if (k === 'KeyV' || k === 'Escape') this.ui.push(k)
   }
 
   onKeyUp = (e: KeyboardEvent): void => {
-    this.down.delete(e.code)
+    const k = this.names.get(e.code) ?? keyName(e)
+    this.names.delete(e.code)
+    this.down.delete(k)
+    // A Mac a Cmd lenyomása alatt felengedett betűkről nem szól: a Cmd elengedésekor mindent felengedünk
+    if (e.key === 'Meta') this.onBlur()
   }
 
   /** Ablakváltáskor minden billentyű „felengedett” (különben beragadna a gáz) */
   onBlur = (): void => {
     this.down.clear()
+    this.names.clear()
   }
 
   attach(target: Window): () => void {

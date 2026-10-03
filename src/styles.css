@@ -1824,6 +1824,11 @@ tr.meh td:first-child {
   color: #fff;
   font-weight: 700;
 }
+.sim-warn.tip {
+  background: rgba(17, 24, 39, 0.88);
+  max-width: min(90vw, 520px);
+  text-align: center;
+}
 .sim-overlay {
   position: absolute;
   inset: 0;

@@ -17,7 +17,7 @@ import { BotDriver } from '../../sim/bot'
 import { BotInput } from '../../sim/input/botInput'
 import { KEY_HELP, KeyboardInput } from '../../sim/input/keyboard'
 import { seedOf } from '../../sim/rng'
-import { createSim, type Sim } from '../../sim/sim'
+import { createSim, NOTICE_S, type Sim } from '../../sim/sim'
 import { CENTER_F } from '../../sim/vehicle'
 import { buildWorld } from '../../sim/world/build'
 import { buildRoadGraph } from '../../sim/examiner/reroute'
@@ -48,6 +48,8 @@ interface Dash {
   progress: number
   total: number
   guide: Guidance | null
+  /** Kezelési tanács (ha friss) */
+  notice: string | null
 }
 
 function readDash(sim: Sim, ex: Examiner | null): Dash {
@@ -69,6 +71,7 @@ function readDash(sim: Sim, ex: Examiner | null): Dash {
     progress: ex?.progress.s ?? 0,
     total: sim.world.route.length,
     guide: ex?.guidance() ?? null,
+    notice: s.notice && s.t - s.notice.t < NOTICE_S ? s.notice.text : null,
   }
 }
 
@@ -386,7 +389,11 @@ export function FreeDrivePage({ routeId }: { routeId: string }) {
             </div>
           )}
           {LOOK_LABEL[dash.look] && <div className="sim-look">{LOOK_LABEL[dash.look]}</div>}
-          {(dash.onKerb || dash.offRoad) && <div className="sim-warn">{dash.onKerb ? 'Szegély! A kerék a járdán van.' : 'Letértél az útról.'}</div>}
+          {dash.onKerb || dash.offRoad ? (
+            <div className="sim-warn">{dash.onKerb ? 'Szegély! A kerék a járdán van.' : 'Letértél az útról.'}</div>
+          ) : (
+            dash.notice && <div className="sim-warn tip">{dash.notice}</div>
+          )}
           {toasts.length > 0 && (
             <ul className="sim-toasts" aria-live="polite">
               {toasts.map((f, i) => (

@@ -154,7 +154,8 @@ function PlayerCar({ sim }: { sim: Sim }) {
 /** Egy képkocka: bemenet, egyszeri mozdulatok, szimulációs lépések, és a napfény árnyékának követése */
 function runFrame(sim: Sim, input: SimInput, paused: boolean, dt: number, focus: [number, number, number], onFrame?: () => void) {
   const ctl = input.sample(dt)
-  for (const a of input.takeActions()) sim.state = applyAction(sim.state, a)
+  // Szünetben a gombnyomások nem hatnak (a szünet utáni első pillanatban sem)
+  for (const a of input.takeActions()) if (!paused) sim.state = applyAction(sim.state, a)
   sim.state = { ...sim.state, look: input.look() }
   if (!paused) {
     advance(sim, ctl, Math.min(dt, 0.1))

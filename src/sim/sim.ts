@@ -34,7 +34,12 @@ export interface SimState {
   onKerb: boolean
   offRoad: boolean
   events: SimEvent[]
+  /** Rövid kezelési tanács a műszerfalon (pl. miért nem indul az autó) és az ideje (s) */
+  notice?: { text: string; t: number }
 }
+
+/** Ennyi ideig látszik a kezelési tanács (s) */
+export const NOTICE_S = 3
 
 export interface Sim {
   world: World
@@ -67,10 +72,14 @@ export function applyAction(s: SimState, a: SimAction): SimState {
       return { ...s, car: toggleIndicator(s.car, 'right') }
     case 'hazard':
       return { ...s, car: { ...s.car, hazard: !s.car.hazard } }
-    case 'gear':
-      return { ...s, car: toggleGear(s.car) }
+    case 'gear': {
+      const car = toggleGear(s.car)
+      // Automata váltó: menet közben nem vált (a kúszó autót előbb meg kell állítani)
+      if (car === s.car) return { ...s, notice: { text: 'Váltani csak álló autóval lehet: tartsd lenyomva a féket (S), és úgy válts.', t: s.t } }
+      return { ...s, car, notice: undefined }
+    }
     case 'handbrake':
-      return { ...s, car: { ...s.car, handbrake: !s.car.handbrake } }
+      return { ...s, car: { ...s.car, handbrake: !s.car.handbrake }, notice: undefined }
   }
 }
 
@@ -97,7 +106,9 @@ export function stepSim(sim: Pick<Sim, 'index'>, s: SimState, ctl: Controls): Si
   if (onKerb && !s.onKerb) car = { ...car, speed: car.speed * 0.7 }
   if (offRoad && !s.offRoad) events.push({ kind: 'offroad', t, at: [car.x, car.z] })
 
-  return { ...s, t, car, onKerb, offRoad, events: events.length ? [...s.events, ...events] : s.events }
+  // Gázt ad, de a kézifék be van húzva: nem indul el, mondjuk meg, miért
+  const notice = ctl.throttle > 0.5 && car.handbrake && Math.abs(car.speed) < 0.1 ? { text: 'Be van húzva a kézifék: a Szóközzel engedd ki.', t } : s.notice
+  return { ...s, t, car, onKerb, offRoad, notice, events: events.length ? [...s.events, ...events] : s.events }
 }
 
 /** Két irányított téglalap fedi-e egymást (szeparáló tengelyek) */
