@@ -1,4 +1,4 @@
-import type { Road } from './types'
+import type { Junction, Road } from './types'
 
 /**
  * Egy csomópont útágai és a főút kiválasztása. A táblázás és a forgalom szabályai ugyanezt használják, így a vezető
@@ -50,4 +50,13 @@ export function nodeIndex(roads: Road[]): Map<number, Array<{ road: Road; i: num
       else m.set(n, [{ road: r, i }])
     })
   return m
+}
+
+/**
+ * A megállási vonal távolsága a csomóponttól az adott ágon (m): a kereszteződés széle előtt kicsivel (az osm2streets
+ * szerinti levágásnál), különben a legszélesebb befutó út félszélessége + 2 m
+ */
+export function stopBack(j: Junction, road: Road, dir: 1 | -1): number {
+  const t = j.trims?.[`${road.id}:${dir}`]
+  return t !== undefined ? t + 0.6 : j.core + 2
 }

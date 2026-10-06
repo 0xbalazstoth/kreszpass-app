@@ -1,8 +1,8 @@
-import { armsAt, mainArms, nodeIndex, type Arm } from '../world/junctionArms'
+import { armsAt, mainArms, nodeIndex, stopBack, type Arm } from '../world/junctionArms'
 import { rightLaneCentre } from '../world/lanes'
 import { headingAt, offsetAt, pointAt } from '../world/polyline'
 import { projectOnSegment, wrapAngle, type XZ } from '../world/project'
-import type { Junction, World } from '../world/types'
+import type { Junction, Road, World } from '../world/types'
 
 /**
  * Kereszteződések szabályai a forgalomhoz: minden útágra, hogy mi szabályozza (lámpa, STOP, elsőbbségadás, főút,
@@ -43,7 +43,7 @@ export function buildJunctionModels(world: World): Map<number, JunctionModel> {
     const models: ArmModel[] = arms.map((a) => {
       const sBefore = a.s - a.dir * 8
       const heading = headingAt(a.road.pts, a.road.cum, Math.max(0, Math.min(a.road.length, sBefore))) + (a.dir === 1 ? 0 : Math.PI)
-      const lineS = Math.max(0, Math.min(a.road.length, a.s - a.dir * (j.core + 2)))
+      const lineS = Math.max(0, Math.min(a.road.length, a.s - a.dir * stopBack(j, a.road, a.dir)))
       const lineAt = pointAt(a.road.pts, a.road.cum, lineS)
       const near = (p: XZ, h: number) => Math.hypot(p[0] - lineAt[0], p[1] - lineAt[1]) < ATTACH_M && Math.abs(wrapAngle(h - heading)) < 0.7
       let control: Control
@@ -57,6 +57,21 @@ export function buildJunctionModels(world: World): Map<number, JunctionModel> {
       else control = 'equal'
       return { ...a, heading, control, lineS, ...(light >= 0 ? { light } : {}) }
     })
+    // Hegyesszögben becsatlakozó ágon a magtól mért vonal még a másik úton lehet: a várakozó autó ott a többiek
+    // útjában állna. Addig hátrébb visszük, amíg a várakozó autó (a sávja közepén) egyik másik ágon sem áll.
+    for (const a of models) {
+      if (!a.canApproach) continue
+      const others = models.filter((b) => b.road !== a.road)
+      const onOther = (s: number) => {
+        const p = lanePoint(a, s, true).at
+        // A várakozó kocsi eleje és a hátulja (a vonal előtt egy kocsihossznyi)
+        const back = lanePoint(a, Math.max(0, Math.min(a.road.length, s - a.dir * 4)), true).at
+        return others.some((b) => [p, back].some((q) => distToRoad(q, b.road) < b.road.halfWidth + 1.1))
+      }
+      let back = stopBack(j, a.road, a.dir)
+      while (back < j.core + 25 && onOther(a.s - a.dir * back)) back += 1
+      a.lineS = Math.max(0, Math.min(a.road.length, a.s - a.dir * back))
+    }
     out.set(j.node, { j, arms: models })
   }
   return out
@@ -175,7 +190,14 @@ export interface Movement {
 }
 
 /** Az ág sávközepe a megadott helyen, a haladási irány szerint (toward: a csomópont felé) */
-function lanePoint(a: ArmModel, s: number, toward: boolean): { at: XZ; heading: number } {
+/** Egy pont távolsága egy út középvonalától (m) */
+function distToRoad(p: XZ, r: Road): number {
+  let best = Infinity
+  for (let i = 0; i < r.pts.length - 1; i++) best = Math.min(best, projectOnSegment(p, r.pts[i], r.pts[i + 1]).dist)
+  return best
+}
+
+function lanePoint(a: Arm, s: number, toward: boolean): { at: XZ; heading: number } {
   const r = a.road
   const travel: 1 | -1 = toward ? a.dir : (-a.dir as 1 | -1)
   const roadH = headingAt(r.pts, r.cum, s, 2)
@@ -196,7 +218,7 @@ export function movementOf(m: JunctionModel, inArm: ArmModel, outArm: ArmModel):
   const hit = cache.get(key)
   if (hit) return hit
   const A = lanePoint(inArm, inArm.lineS, true)
-  const sOut = Math.max(0, Math.min(outArm.road.length, outArm.s - outArm.dir * (m.j.core + 3)))
+  const sOut = Math.max(0, Math.min(outArm.road.length, outArm.s - outArm.dir * (stopBack(m.j, outArm.road, outArm.dir) + 1)))
   const B = lanePoint(outArm, sOut, false)
   // Jobbra kanyarodva tágabb ív (a hátsó kerék ne menjen fel a sarkon a szegélyre), balra a szembejövő sávot elkerülve
   const right = wrapAngle(B.heading - A.heading) > 0.5
@@ -264,6 +286,8 @@ export interface Mover {
   inside: boolean
   /** Áll a megállási vonalánál */
   waiting: boolean
+  /** Egy helyben áll (bárhol) */
+  still?: boolean
 }
 
 /**
@@ -273,7 +297,9 @@ export interface Mover {
  */
 export function mustWait(m: JunctionModel, me: Mover, others: Mover[], etaLimit: number, waited = 0): boolean {
   const crosses = (o: Mover) => !me.movement || !o.movement || conflict(m, me.movement, o.movement)
-  if (others.some((o) => o.inside && crosses(o))) return true
+  // Nagyon hosszú várakozás után (körbeérő várakozás a kereszteződésben) a bent álló sem tartja vissza: ha a
+  // teste útban van, az ütközés-figyelés úgyis megállítja
+  if (others.some((o) => o.inside && crosses(o) && !(waited > 15 && o.still))) return true
   // Sokáig várva kisebb rést is elfogad (ahogy a valóságban), és a szintén várakozóktól nem tart
   const limit = waited > 7 ? Math.min(etaLimit, 2) : etaLimit
   return others.some(
@@ -282,6 +308,7 @@ export function mustWait(m: JunctionModel, me: Mover, others: Mover[], etaLimit:
       mustYield(me.approach, o.approach) &&
       o.eta < limit &&
       crosses(o) &&
-      !(o.waiting && (mustYield(o.approach, me.approach) || waited > 7)),
+      !(o.waiting && (mustYield(o.approach, me.approach) || waited > 7)) &&
+      !(waited > 15 && o.still),
   )
 }

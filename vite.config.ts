@@ -7,6 +7,8 @@ import { VitePWA } from 'vite-plugin-pwa'
 export default defineConfig({
   // Relatív útvonal, hogy GitHub Pages / Cloudflare Pages alkönyvtárban is működjön
   base: './',
+  // Az osm2streets a WebAssembly-fájlját a saját helyéhez képest tölti be: nem csomagoljuk újra
+  optimizeDeps: { exclude: ['osm2streets-js'] },
   plugins: [
     react(),
     VitePWA({
@@ -28,7 +30,8 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        // A WebAssembly (az utcageometria, osm2streets) is offline elérhető
+        globPatterns: ['**/*.{js,css,html,svg,png,woff2,wasm}'],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         // A helyi OSM-csempék (public/osm, ~8000 fájl) és a 3D anyagok (public/3d, kb. 5 MB) nem kerülnek az
         // előtöltésbe, hanem használatkor tárolódnak
@@ -92,5 +95,7 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
+    // A szimulátor tesztjei (robotsofőr valódi útvonalakon, forgalommal) percnyi szimulált időt futtatnak
+    testTimeout: 60_000,
   },
 })

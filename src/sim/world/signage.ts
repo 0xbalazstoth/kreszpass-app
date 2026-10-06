@@ -1,5 +1,5 @@
 import { speedSignCode } from '../../data/signs'
-import { armsAt, mainArms, type Arm } from './junctionArms'
+import { armsAt, mainArms, stopBack, type Arm } from './junctionArms'
 import { halfWidthAt } from './lanes'
 import { headingAt, offsetAt } from './polyline'
 import { wrapAngle, type XZ } from './project'
@@ -55,15 +55,15 @@ export function inferSignage(ctx: SignageContext): void {
     for (const a of arms) {
       if (!a.canLeave || a.road.length < 20) continue
       const other = arms.filter((b) => b.road !== a.road)
-      if (other.some((b) => b.road.maxspeed !== a.road.maxspeed)) signOnArm(ctx, a, speedSignCode(a.road.maxspeed), j.core + 6, false)
+      if (other.some((b) => b.road.maxspeed !== a.road.maxspeed)) signOnArm(ctx, a, speedSignCode(a.road.maxspeed), stopBack(j, a.road, a.dir) + 4, false)
     }
     if (!real) continue
 
     // ---------------------------------------------------------------- egyirányú utca: behajtás és „Behajtani tilos”
     for (const a of arms) {
       if (a.road.oneway === 0 || a.road.roundabout || a.road.length < 15) continue
-      if (a.canLeave) signOnArm(ctx, a, 'E-012', j.core + 3, false)
-      else signOnArm(ctx, a, 'C-001', j.core + 2, false)
+      if (a.canLeave) signOnArm(ctx, a, 'E-012', stopBack(j, a.road, a.dir) + 1, false)
+      else signOnArm(ctx, a, 'C-001', stopBack(j, a.road, a.dir), false)
     }
 
     // Jelzőlámpás kereszteződésben a lámpa szabályoz
@@ -73,7 +73,7 @@ export function inferSignage(ctx: SignageContext): void {
     if (arms.some((a) => a.road.roundabout)) {
       for (const a of arms) {
         if (a.road.roundabout || !a.canApproach) continue
-        const line = j.core + 1.5
+        const line = stopBack(j, a.road, a.dir) - 0.5
         if (a.s - a.dir * line < 0 || a.s - a.dir * line > a.road.length) continue
         ctx.stopLine(a.road, a.s - a.dir * line, a.dir, 'teeth')
         signOnArm(ctx, a, 'B-001', line, true)
@@ -89,7 +89,7 @@ export function inferSignage(ctx: SignageContext): void {
     if (!main.length) continue
     for (const a of arms) {
       if (!a.canApproach) continue
-      const line = j.core + 2
+      const line = stopBack(j, a.road, a.dir)
       const sl = a.s - a.dir * line
       if (sl < 0 || sl > a.road.length) continue
       if (main.includes(a)) {

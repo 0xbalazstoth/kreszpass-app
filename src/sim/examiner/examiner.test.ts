@@ -28,8 +28,8 @@ function drive(seed: number, opts: BotOptions, traffic?: Partial<TrafficOptions>
     const models = buildJunctionModels(world)
     tr = new TrafficSystem(world, buildRoadGraph(world), sim.index, models, routeJunctionPasses(world, models), {
       seed: seed * 7 + 1,
-      cars: 10,
-      peds: 8,
+      cars: 22,
+      peds: 16,
       directors: true,
       ...traffic,
     })

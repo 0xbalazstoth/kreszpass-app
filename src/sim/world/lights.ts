@@ -25,3 +25,11 @@ export function lightState(world: Pick<World, 'controllers'>, light: Pick<LightS
   return phaseState(light.phase, t + (world.controllers[light.controller] ?? 0))
 }
 
+
+/** Sárga jelzésnél ennyi idő (s) van még a pirosig; más jelzésnél 0 */
+export function yellowLeft(world: Pick<World, 'controllers'>, light: Pick<LightSite, 'controller' | 'phase'>, t: number): number {
+  const half = CYCLE_S / 2
+  const tt = t + (world.controllers[light.controller] ?? 0)
+  const local = (((tt - light.phase * half) % CYCLE_S) + CYCLE_S) % CYCLE_S
+  return local >= GREEN && local < GREEN + YELLOW ? GREEN + YELLOW - local : 0
+}

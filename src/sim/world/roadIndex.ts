@@ -1,7 +1,8 @@
 import { Grid } from './grid'
 import { halfWidthAt } from './lanes'
 import { projectOnSegment, type XZ } from './project'
-import type { Junction, PavementPiece, Road, SimBuilding } from './types'
+import { distToPoly, inPoly, type Poly } from './streets'
+import type { Junction, PavementPiece, Road, SimBuilding, StreetSurfaces } from './types'
 
 /** Járdaszélesség (m) */
 export const PAVEMENT_W = 2.5
@@ -76,6 +77,8 @@ export class RoadIndex {
   private juncs = new Grid<Junction>(25)
   private paves = new Grid<PavementPiece>(20)
   private houses = new Grid<{ b: SimBuilding; corners: XZ[] }>(30)
+  /** Valósághű utcageometria (osm2streets): ha van, ez dönti el, mi úttest, járda, kereszteződés */
+  private surf: { asphalt: Grid<Poly>; raised: Grid<Poly>; junction: Grid<Poly> } | null = null
 
   readonly roads: Road[]
   readonly junctions: Junction[]
@@ -98,6 +101,21 @@ export class RoadIndex {
       const zs = p.quad.map((q) => q[1])
       this.paves.add(p, Math.min(...xs), Math.min(...zs), Math.max(...xs), Math.max(...zs))
     }
+  }
+
+  setSurfaces(st: StreetSurfaces): void {
+    const grid = (list: Poly[]) => {
+      const g = new Grid<Poly>(20)
+      for (const p of list) g.add(p, p.bbox[0], p.bbox[1], p.bbox[2], p.bbox[3])
+      return g
+    }
+    this.surf = { asphalt: grid(st.asphalt), raised: grid([...st.pavement, ...st.kerbs]), junction: grid(st.junctions) }
+  }
+
+  /** Van-e a pont valamelyik sokszögben (vagy legfeljebb `margin` méterre tőle) */
+  private static hit(g: Grid<Poly>, p: XZ, margin = 0): boolean {
+    const list = margin > 0 ? g.near(p, margin + 1) : g.at(p)
+    return list.some((poly) => (margin > 0 ? distToPoly(p, poly) <= margin : inPoly(p, poly)))
   }
 
   setBuildings(list: SimBuilding[]): void {
@@ -146,6 +164,7 @@ export class RoadIndex {
 
   /** Kereszteződés burkolatán (a közepén vagy egy levágott sarkon) van-e a pont */
   inJunctionPaved(p: XZ, margin = 0): boolean {
+    if (this.surf) return RoadIndex.hit(this.surf.junction, p, margin)
     for (const j of this.juncs.at(p)) {
       if (Math.hypot(p[0] - j.at[0], p[1] - j.at[1]) <= pavedCore(j) + margin) return true
       if (j.fillets.some((tri) => inTriangle(p, tri, margin))) return true
@@ -160,6 +179,11 @@ export class RoadIndex {
 
   /** Úttesten van-e a pont (bármelyik út burkolatán vagy kereszteződésben) */
   onAsphalt(p: XZ, margin = 0): boolean {
+    if (this.surf) {
+      // A járdasarok a kereszteződés sokszögén belül is járda (szegélymagasságban)
+      if (RoadIndex.hit(this.surf.asphalt, p) && !RoadIndex.hit(this.surf.raised, p)) return true
+      return margin > 0 && RoadIndex.hit(this.surf.asphalt, p, margin)
+    }
     for (const { road, i } of this.segs.at(p)) {
       const h = projectOnSegment(p, road.pts[i], road.pts[i + 1])
       if (h.dist > road.halfWidth + 3.6 + margin) continue
@@ -169,6 +193,7 @@ export class RoadIndex {
   }
 
   onPavement(p: XZ): boolean {
+    if (this.surf) return RoadIndex.hit(this.surf.raised, p)
     return this.paves.at(p).some((pc) => inQuad(p, pc.quad))
   }
 

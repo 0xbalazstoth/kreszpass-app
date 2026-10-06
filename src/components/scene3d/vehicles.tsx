@@ -1,6 +1,7 @@
 import { useFrame } from '@react-three/fiber'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ExtrudeGeometry, MeshStandardMaterial, Shape, type BufferGeometry, type Mesh, type Object3D } from 'three'
+import { amberOn, head, rim, SEDAN_SCALE, tail, tyre } from './carParts'
 import { carPaint, windowGlass, type CarShapeKind } from './materials'
 import { loadGltf } from './models'
 
@@ -76,14 +77,9 @@ function geometryOf(kind: CarShapeKind) {
   return g
 }
 
-const tyre = new MeshStandardMaterial({ color: '#16171a', roughness: 0.92 })
-const rim = new MeshStandardMaterial({ color: '#c3c7cc', roughness: 0.3, metalness: 0.9 })
 const trim = new MeshStandardMaterial({ color: '#1b1d21', roughness: 0.6 })
 const plate = new MeshStandardMaterial({ color: '#f4f4f0', roughness: 0.5 })
 const plateBlue = new MeshStandardMaterial({ color: '#1d4ed8', roughness: 0.5 })
-const head = new MeshStandardMaterial({ color: '#fffaf0', emissive: '#fff4d6', emissiveIntensity: 0.6, roughness: 0.1, metalness: 0.3 })
-const tail = new MeshStandardMaterial({ color: '#8b0d0d', emissive: '#b91c1c', emissiveIntensity: 0.5, roughness: 0.2 })
-const amberOn = new MeshStandardMaterial({ color: '#f59e0b', emissive: '#f59e0b', emissiveIntensity: 2.5, toneMapped: false })
 
 function Wheel({ s, side }: { s: number; side: 1 | -1 }) {
   return (
@@ -113,9 +109,6 @@ function Indicator({ x, y, z, active }: { x: number; y: number; z: number; activ
   )
 }
 
-/** A Quaternius szedán (CC0) mérete és a mi kocsink hossza: a modell erre van méretezve */
-const SEDAN_LENGTH = 4.22
-const SEDAN_SCALE = LEN / SEDAN_LENGTH
 
 /** A modell egy példánya: a karosszéria a kért színre fényezve, valósághű üveggel és lámpákkal */
 function sedanInstance(src: Object3D, color: string): Object3D {

@@ -7,6 +7,9 @@ import { makeProjection, projectOnSegment, toLocal, wrapAngle, type XZ } from '.
 import { dividerOf, halfWidthAt, lanesRange } from './lanes'
 import { inferSignage } from './signage'
 import { buildingCorners, PAVEMENT_W, RoadIndex } from './roadIndex'
+import { stopBack } from './junctionArms'
+import { distToPoly, inPoly, streetsFor, type LaneSpec, type Poly } from './streets'
+import { finishSurfaces } from './surfaces'
 import type { CrossingSite, FurnitureSite, Junction, LightSite, PavementPiece, Road, SignSite, SimBuilding, StopSite, Stripe, World } from './types'
 
 /**
@@ -99,6 +102,144 @@ function makeRoad(id: number, w: OsmWay, pts: XZ[], nodes: number[]): Road {
     maxspeed: parseMaxspeed(tags) ?? (highway.startsWith('motorway') ? 130 : 50),
     roundabout,
     marked: !roundabout && (lanesTag > 0 || MARKED.has(highway.replace(/_link$/, ''))),
+  }
+}
+
+/** Töröttvonal párhuzamos eltolása (+ = jobbra), a töréspontokban a két szakasz normálisának átlagával */
+function shiftPolyline(pts: XZ[], d: number): XZ[] {
+  const n = pts.length
+  return pts.map((p, i) => {
+    const a = pts[Math.max(0, i - 1)]
+    const b = pts[Math.min(n - 1, i + 1)]
+    const h0 = i > 0 ? Math.atan2(p[0] - a[0], -(p[1] - a[1])) : Math.atan2(b[0] - p[0], -(b[1] - p[1]))
+    const h1 = i < n - 1 ? Math.atan2(b[0] - p[0], -(b[1] - p[1])) : h0
+    const [r0x, r0z] = rightOf(h0)
+    const [r1x, r1z] = rightOf(h1)
+    let rx = r0x + r1x
+    let rz = r0z + r1z
+    const len = Math.hypot(rx, rz) || 1
+    rx /= len
+    rz /= len
+    // Éles törésnél a ferde (miter) eltolás korlátozva
+    const k = Math.min(2, 1 / Math.max(0.5, rx * r0x + rz * r0z))
+    return [p[0] + rx * d * k, p[1] + rz * d * k]
+  })
+}
+
+const DRIVE = new Set(['Driving', 'Bus'])
+/** Az úttest részei (a forgalmi sávokon kívül a parkolósáv és a leállósáv is) */
+const PAVED = new Set(['Driving', 'Bus', 'Parking', 'Shoulder', 'Biking', 'SharedLeftTurn', 'Construction'])
+const WALK = new Set(['Sidewalk', 'Footway', 'SharedUse'])
+
+/**
+ * Lakóutcán a valóságban az úttest szélén parkolnak (Budapesten szinte mindenhol): az osm2streets-nek parkolósávot
+ * adunk meg (kétirányú utcán mindkét oldalon, egyirányún a jobb oldalon), így az utca a valódihoz hasonlóan széles.
+ */
+function withParking(tags0: Record<string, string>, r: Road): Record<string, string> {
+  // Városi utcán mindkét oldalon van járda (az osm2streets egyirányú utcán csak az egyik oldalra tenne)
+  // (a körforgalomban csak a külső, jobb oldalon: belül a középsziget van; a főutak egyirányú ágai többnyire egy
+  // osztott pályás út két fele, köztük nem járda, hanem elválasztósáv: ott az osm2streets dönt)
+  const street = r.oneway === 0 ? /^(primary|secondary|tertiary|unclassified|residential|living_street)$/.test(r.highway) : /^(residential|living_street)$/.test(r.highway)
+  const tags = street && !Object.keys(tags0).some((k) => k.startsWith('sidewalk')) ? { ...tags0, sidewalk: r.roundabout ? 'right' : 'both' } : tags0
+  if (r.roundabout || Object.keys(tags).some((k) => k.startsWith('parking') || k.startsWith('shoulder'))) return tags
+  // Egysávos csomóponti ág (bekötő-, kanyarodó út): a valóságban szélesebb a sávnál, leállósávval
+  if (/_link$/.test(r.highway)) return r.lanesFwd + r.lanesBack === 1 ? { ...tags, shoulder: 'both' } : tags
+  if (r.oneway === 0) return /^(residential|living_street|unclassified)$/.test(r.highway) ? { ...tags, 'parking:lane:both': 'parallel' } : tags
+  // Egysávos egyirányú utca (bármilyen rangú): a jobb oldalán parkolnak
+  if (r.lanesFwd + r.lanesBack > 1 || /^(motorway|trunk)$/.test(r.highway)) return tags
+  return { ...tags, [r.oneway === 1 ? 'parking:lane:right' : 'parking:lane:left']: 'parallel' }
+}
+
+/**
+ * Az osm2streets sávjai az útra: sávszám, sávszélesség, a forgalmi sávok együttes félszélessége, a járdák helye.
+ * Ha a forgalmi sávok nem az OSM-vonal körül vannak (pl. csak az egyik oldalon van járda), a középvonalat a forgalmi
+ * sávok közepére toljuk: a sávok és a rajzolt burkolat így egybeesik.
+ */
+function applyLanes(r: Road, lanes: LaneSpec[]) {
+  let x = 0
+  const edges = lanes.map((l) => {
+    const e = { ...l, l: x, r: x + l.width }
+    x += l.width
+    return e
+  })
+  const drive = edges.filter((e) => DRIVE.has(e.type))
+  if (!drive.length) return
+  // Az úttest (forgalmi és parkolósávok együtt): a középvonal ennek a közepe, a félszélesség a szegélyig tart
+  const paved = edges.filter((e) => PAVED.has(e.type))
+  const dl = Math.min(...paved.map((e) => e.l))
+  const dr = Math.max(...paved.map((e) => e.r))
+  const mid = (dl + dr) / 2
+  const fwd = drive.filter((e) => e.dir === 'Fwd').length
+  const back = drive.length - fwd
+  // Az egyirányúság a mi adatunk szerint (az osm2streets ugyanígy értelmezi; ha mégsem, a sávszám marad)
+  if ((r.oneway === 1 && back > 0) || (r.oneway === -1 && fwd > 0)) return
+  r.lanesFwd = fwd
+  r.lanesBack = back
+  r.laneWidth = drive.reduce((a, e) => a + e.width, 0) / drive.length
+  r.halfWidth = (dr - dl) / 2
+  r.hwStart = undefined
+  r.hwEnd = undefined
+  const right = edges.filter((e) => WALK.has(e.type) && e.l >= dr - 0.01)
+  const left = edges.filter((e) => WALK.has(e.type) && e.r <= dl + 0.01)
+  r.walkR = right.length ? [Math.min(...right.map((e) => e.l)) - mid, Math.max(...right.map((e) => e.r)) - mid] : undefined
+  r.walkL = left.length ? [mid - Math.max(...left.map((e) => e.r)), mid - Math.min(...left.map((e) => e.l))] : undefined
+}
+
+/**
+ * Az út középvonala és félszélessége a megrajzolt úttest szerint: a kereszteződésektől távol keresztben végigmérve
+ * (medián). A sávok, a szegély, a járda helye így pontosan a látott burkolathoz igazodik (az osm2streets az
+ * OSM-vonalat nem mindig az úttest közepére teszi, pl. ha csak az egyik oldalon van járda).
+ */
+function fitToAsphalt(r: Road, asphalt: Grid<Poly>, junctions: Grid<Poly>) {
+  const on = (p: XZ) => asphalt.at(p).some((poly) => inPoly(p, poly))
+  const mids: number[] = []
+  const halves: number[] = []
+  // Rövid útdarabon (két közeli kereszteződés között) sűrűbben és a kereszteződéshez közelebb is mérünk
+  const short = r.length < 40
+  // Legfeljebb kb. 10 keresztmetszet útanként (a medián ebből is megbízható)
+  const step = short ? 2 : Math.max(5, (r.length - 16) / 10)
+  for (let s = short ? 2 : 8; s < r.length - (short ? 2 : 8); s += step) {
+    const c = pointAt(r.pts, r.cum, s)
+    const clear = short ? 2.5 : 6
+    if (junctions.near(c, clear).some((poly) => distToPoly(c, poly) < clear)) continue
+    const h = headingAt(r.pts, r.cum, s)
+    const at = (l: number) => offsetAt(r.pts, r.cum, s, l, h)
+    // A középvonalhoz legközelebbi úttestpont, onnan mindkét irányban a széléig
+    let start: number | null = null
+    for (let k = 0; k <= 20 && start === null; k++) for (const l of [k * 0.25, -k * 0.25]) if (start === null && on(at(l))) start = l
+    if (start === null) continue
+    let lo = start
+    let hi = start
+    while (hi - start < 25 && on(at(hi + 0.25))) hi += 0.25
+    while (start - lo < 25 && on(at(lo - 0.25))) lo -= 0.25
+    mids.push((lo + hi) / 2)
+    halves.push((hi - lo) / 2)
+  }
+  if (!mids.length) return
+  const median = (v: number[]) => [...v].sort((a, b) => a - b)[Math.floor(v.length / 2)]
+  const shift = median(mids)
+  const half = median(halves)
+  // A járdák a szegélytől kifelé (a szélességük az osm2streets szerint)
+  if (r.walkR) r.walkR = [half, half + (r.walkR[1] - r.walkR[0])]
+  if (r.walkL) r.walkL = [half, half + (r.walkL[1] - r.walkL[0])]
+  r.halfWidth = half
+  // Ha a megrajzolt úttest keskenyebb, mint a sávok együtt, a sávszám csökken (a látott burkolat számít)
+  const fits = Math.max(1, Math.round((2 * half) / r.laneWidth))
+  if (fits < r.lanesFwd + r.lanesBack) {
+    if (r.lanesFwd === 0 || r.lanesBack === 0) {
+      if (r.lanesFwd) r.lanesFwd = fits
+      else r.lanesBack = fits
+    } else {
+      const back = Math.max(1, Math.round((fits * r.lanesBack) / (r.lanesFwd + r.lanesBack)))
+      r.lanesBack = Math.min(back, fits - 1)
+      r.lanesFwd = Math.max(1, fits - r.lanesBack)
+    }
+  }
+  r.laneWidth = Math.min(r.laneWidth, (2 * half) / (r.lanesFwd + r.lanesBack))
+  if (Math.abs(shift) > 0.05) {
+    r.pts = shiftPolyline(r.pts, shift)
+    r.cum = cumulative(r.pts)
+    r.length = r.cum[r.cum.length - 1]
   }
 }
 
@@ -203,6 +344,7 @@ export function buildWorld(osm: OsmData, line: LineString, opts: BuildOptions): 
 
   // ---------------------------------------------------------------- utak a folyosóban
   const roads: Road[] = []
+  const roadTags = new Map<number, Record<string, string>>()
   const controlNodes: OsmNode[] = []
   for (const el of osm.elements) {
     if (el.type === 'node' && el.tags) controlNodes.push(el)
@@ -211,7 +353,10 @@ export function buildWorld(osm: OsmData, line: LineString, opts: BuildOptions): 
     const near = pts.map((p) => distToRoute(p) <= corridor)
     let run: number[] = []
     const flush = () => {
-      if (run.length >= 2) roads.push(makeRoad(roads.length, el, run.map((i) => pts[i]), run.map((i) => el.nodes[i])))
+      if (run.length >= 2) {
+        roadTags.set(roads.length, el.tags ?? {})
+        roads.push(makeRoad(roads.length, el, run.map((i) => pts[i]), run.map((i) => el.nodes[i])))
+      }
       run = []
     }
     for (let i = 0; i < pts.length; i++) {
@@ -221,6 +366,20 @@ export function buildWorld(osm: OsmData, line: LineString, opts: BuildOptions): 
     flush()
   }
   if (!roads.length) throw new Error('Az útvonal mentén nincsenek utak a térképadatokban.')
+
+  // ---------------------------------------------------------------- valósághű utcageometria (osm2streets)
+  const streets = streetsFor(roads, new Map(roads.map((r) => [r.id, withParking(roadTags.get(r.id) ?? {}, r)])), proj)
+  if (streets) {
+    const asphalt = new Grid<Poly>(20)
+    for (const p of streets.asphalt) asphalt.add(p, p.bbox[0], p.bbox[1], p.bbox[2], p.bbox[3])
+    const jpolys = new Grid<Poly>(20)
+    for (const p of streets.junctions) jpolys.add(p, p.bbox[0], p.bbox[1], p.bbox[2], p.bbox[3])
+    for (const r of roads) {
+      const l = streets.lanes.get(r.id)
+      if (l) applyLanes(r, l)
+      fitToAsphalt(r, asphalt, jpolys)
+    }
+  }
 
   // ---------------------------------------------------------------- kereszteződések
   const arms = new Map<number, { at: XZ; arms: number; roads: Set<Road> }>()
@@ -243,7 +402,7 @@ export function buildWorld(osm: OsmData, line: LineString, opts: BuildOptions): 
     junctionOf.set(node, j)
   }
   // Kiszélesedés a szélesebb folytatás felé (két út csatlakozása, kereszteződés nélkül)
-  for (const [node, e] of arms) {
+  for (const [node, e] of streets ? [] : arms) {
     if (e.arms !== 2 || e.roads.size !== 2) continue
     const [a, b] = [...e.roads]
     for (const [r, o] of [
@@ -256,13 +415,47 @@ export function buildWorld(osm: OsmData, line: LineString, opts: BuildOptions): 
     }
   }
   // Sarkok: a szomszédos útágak szegélyvonalainak metszéspontjánál levágott sarok (a kanyarodó autó helye)
-  for (const j of junctions) {
+  for (const j of streets ? [] : junctions) {
     const e = arms.get(j.node)
     if (e) j.fillets = filletsFrom(j.at, armsAt(j, [...e.roads]))
   }
+  // A kereszteződés széle útáganként: ahol a középvonal kilép a kereszteződés sokszögéből
+  if (streets) {
+    const polys = new Grid<Poly>(20)
+    for (const p of streets.junctions) polys.add(p, p.bbox[0], p.bbox[1], p.bbox[2], p.bbox[3])
+    for (const j of junctions) {
+      const e = arms.get(j.node)
+      const poly = polys.at(j.at).find((p) => inPoly(j.at, p)) ?? polys.near(j.at, 4).find((p) => distToPoly(j.at, p) < 4)
+      if (!e || !poly) continue
+      const trims: Record<string, number> = {}
+      for (const r of e.roads)
+        r.nodes.forEach((n, i) => {
+          if (n !== j.node) return
+          for (const dir of [1, -1] as const) {
+            if ((dir === 1 && i === 0) || (dir === -1 && i === r.nodes.length - 1)) continue
+            // Az ág utolsó pontja a kereszteződés sokszögében (a csomópont maga a sokszögön kívül is eshet, pl.
+            // összevont kereszteződésnél); ha az ág bele sem fut, nincs levágás (alapértelmezett megállási vonal)
+            let last = -1
+            for (let d = 0; d < 40; d += 0.5) {
+              const sx = r.cum[i] - dir * d
+              if (sx < 0 || sx > r.length) break
+              if (inPoly(pointAt(r.pts, r.cum, sx), poly)) last = d
+              else if (last >= 0) break
+            }
+            // (az összevont, hosszan elnyúló kereszteződésnél sem kerül a vonal túl messzire)
+            if (last >= 0) trims[`${r.id}:${dir}`] = Math.min(14, last + 0.5)
+          }
+        })
+      const vals = Object.values(trims)
+      if (!vals.length) continue
+      j.trims = trims
+      j.core = Math.max(1, ...vals)
+      j.radius = j.core + 1
+    }
+  }
   // Éles törés egy úton belül (az utca kanyarodik, de nincs kereszteződés): ott is levágott sarok kell
   let bendId = -1
-  for (const r of roads)
+  for (const r of streets ? [] : roads)
     for (let i = 1; i < r.pts.length - 1; i++) {
       if (junctionOf.has(r.nodes[i])) continue
       const s0 = r.cum[i]
@@ -286,6 +479,9 @@ export function buildWorld(osm: OsmData, line: LineString, opts: BuildOptions): 
       if (j.fillets.length) junctions.push(j)
     }
   const index = new RoadIndex(roads, junctions)
+  // Lekerekített szegélyek, csempékre vágott felületek
+  const surfaces = streets ? finishSurfaces(streets) : null
+  if (surfaces) index.setSurfaces(surfaces)
 
   /** A valódi kereszteződések helye az úton (s) */
   const junctionS = (r: Road) =>
@@ -303,10 +499,12 @@ export function buildWorld(osm: OsmData, line: LineString, opts: BuildOptions): 
   // ---------------------------------------------------------------- járdák
   const pavements: PavementPiece[] = []
   for (const r of roads) {
-    if (NO_PAVEMENT.has(r.highway)) continue
+    if (!streets && NO_PAVEMENT.has(r.highway)) continue
     for (const side of [1, -1] as const) {
       // A körforgalom bal oldalán a középsziget van
-      if (r.roundabout && side === -1) continue
+      if (!streets && r.roundabout && side === -1) continue
+      const walk = side === 1 ? r.walkR : r.walkL
+      if (streets && !walk) continue
       for (let i = 0; i < r.pts.length - 1; i++) {
         const a = r.pts[i]
         const b = r.pts[i + 1]
@@ -321,13 +519,18 @@ export function buildWorld(osm: OsmData, line: LineString, opts: BuildOptions): 
           const p0: XZ = [a[0] + (b[0] - a[0]) * t0, a[1] + (b[1] - a[1]) * t0]
           const p1: XZ = [a[0] + (b[0] - a[0]) * t1, a[1] + (b[1] - a[1]) * t1]
           const off = (p: XZ, l: number): XZ => [p[0] + rx * l * side, p[1] + rz * l * side]
-          const inner = halfWidthAt(r, r.cum[i] + ((t0 + t1) / 2) * len)
-          const outer = inner + PAVEMENT_W
+          const inner = walk ? walk[0] : halfWidthAt(r, r.cum[i] + ((t0 + t1) / 2) * len)
+          const outer = walk ? walk[1] : inner + PAVEMENT_W
           const mid: XZ = [(p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2]
           const c = off(mid, (inner + outer) / 2)
           const edge = off(mid, inner + 0.3)
-          if (index.inJunctionPaved(c, 0.6) || index.inJunctionPaved(edge, 0.3)) continue
-          if (onOtherAsphalt(c, r, 0.3) || onOtherAsphalt(edge, r, 0.1)) continue
+          // A valódi járdán (a gyalogosoknak és a fáknak), különben a kereszteződésektől és más utaktól távol
+          if (streets) {
+            if (!index.onPavement(c) || !index.onPavement(edge)) continue
+          } else {
+            if (index.inJunctionPaved(c, 0.6) || index.inJunctionPaved(edge, 0.3)) continue
+            if (onOtherAsphalt(c, r, 0.3) || onOtherAsphalt(edge, r, 0.1)) continue
+          }
           const quad: PavementPiece['quad'] = side === 1 ? [off(p0, inner), off(p1, inner), off(p1, outer), off(p0, outer)] : [off(p1, inner), off(p0, inner), off(p0, outer), off(p1, outer)]
           pavements.push({ quad, kerb: [quad[0], quad[1]], chunk: chunkOf(c) })
         }
@@ -346,7 +549,7 @@ export function buildWorld(osm: OsmData, line: LineString, opts: BuildOptions): 
       markings.push({ at: offsetAt(r.pts, r.cum, m, lateral, h), heading: h, length: e - s, width })
     }
   }
-  for (const r of roads) {
+  for (const r of streets ? [] : roads) {
     const js = junctionS(r)
     // A kereszteződések környéke: a kereszteződésben nincs festés, előtte 20 m-en folytonos a felezővonal
     const zones = js.map(({ s, j }) => ({ s, clear: j.core + 2, solid: j.core + 20 }))
@@ -374,6 +577,17 @@ export function buildWorld(osm: OsmData, line: LineString, opts: BuildOptions): 
 
   // ---------------------------------------------------------------- táblák, megállási vonalak, zebrák, lámpák
   const signs: SignSite[] = []
+  /** A legközelebbi úttesten kívüli pont (legfeljebb 30 m-re, a nagy kereszteződésekben is): oszlop nem állhat az úttesten */
+  const offRoad = (base: XZ): XZ => {
+    if (!index.onAsphalt(base, 0.3)) return base
+    for (let rad = 1; rad <= 30; rad += 1)
+      for (let k = 0; k < 24; k++) {
+        const ang = (k / 24) * Math.PI * 2
+        const p: XZ = [base[0] + Math.cos(ang) * rad, base[1] + Math.sin(ang) * rad]
+        if (!index.onAsphalt(p, 0.3)) return p
+      }
+    return base
+  }
   /**
    * Tábla elhelyezése. Az ugyanannak a forgalmi iránynak szóló, egymáshoz közeli táblák egy oszlopra kerülnek
    * (legfeljebb háromig, egymás alatt), mint a valóságban. Oszlop nem állhat az úttesten: ha mégis oda esne,
@@ -385,6 +599,7 @@ export function buildWorld(osm: OsmData, line: LineString, opts: BuildOptions): 
     const [rx, rz] = rightOf(h)
     let at = at0
     for (let k = 0; k < 12 && index.onAsphalt(at, 0.3); k++) at = [at[0] - fx * 1.5, at[1] - fz * 1.5]
+    at = offRoad(at)
     for (const s of signs) {
       if (Math.abs(wrapAngle(s.rotY - rotY)) > 0.5) continue
       const dx = at[0] - s.at[0]
@@ -443,18 +658,6 @@ export function buildWorld(osm: OsmData, line: LineString, opts: BuildOptions): 
   const lights: LightSite[] = []
   const stops: StopSite[] = []
   const crossings: CrossingSite[] = []
-  /** Oszlop helye az úttesten kívül: a járda felé tolva, végső esetben a legközelebbi szabad pont */
-  /** A legközelebbi úttesten kívüli pont (legfeljebb 14 m-re) */
-  const offRoad = (base: XZ): XZ => {
-    if (!index.onAsphalt(base, 0.3)) return base
-    for (let rad = 1; rad <= 14; rad += 1)
-      for (let k = 0; k < 24; k++) {
-        const ang = (k / 24) * Math.PI * 2
-        const p: XZ = [base[0] + Math.cos(ang) * rad, base[1] + Math.sin(ang) * rad]
-        if (!index.onAsphalt(p, 0.3)) return p
-      }
-    return base
-  }
   const poleSpot = (r: Road, s: number, lateral: number, roadH: number): XZ => {
     const side = Math.sign(lateral) || 1
     let at = offsetAt(r.pts, r.cum, s, lateral, roadH)
@@ -493,20 +696,20 @@ export function buildWorld(osm: OsmData, line: LineString, opts: BuildOptions): 
     if (!on) continue
     const hw = n.tags?.highway
     const { road: r, i } = on[0]
-    const s = r.cum[i]
+    let s = r.cum[i]
     if (hw === 'traffic_signals') {
       const j = junctionOf.get(n.id)
       if (j && j.arms >= 3) {
         // A kereszteződés közepére tett lámpa: minden befutó ágra
         for (const { road, i: k } of on) {
           const sk = road.cum[k]
-          if (k > 0 && allowed(road, 1)) addLight(road, Math.max(0, sk - j.core - 2.5), 1, 2 * j.core + 6)
-          if (k < road.nodes.length - 1 && allowed(road, -1)) addLight(road, Math.min(road.length, sk + j.core + 2.5), -1, 2 * j.core + 6)
+          if (k > 0 && allowed(road, 1)) addLight(road, Math.max(0, sk - stopBack(j, road, 1) - 0.5), 1, 2 * j.core + 6)
+          if (k < road.nodes.length - 1 && allowed(road, -1)) addLight(road, Math.min(road.length, sk + stopBack(j, road, -1) + 0.5), -1, 2 * j.core + 6)
         }
       } else {
         const near = nearestJunction(r, s)
         if (near && allowed(r, near.dir))
-          addLight(r, near.dir === 1 ? Math.min(s, near.s - near.j.core - 2.5) : Math.max(s, near.s + near.j.core + 2.5), near.dir, 2 * near.j.core + 6)
+          addLight(r, near.dir === 1 ? Math.min(s, near.s - stopBack(near.j, r, 1) - 0.5) : Math.max(s, near.s + stopBack(near.j, r, -1) + 0.5), near.dir, 2 * near.j.core + 6)
         else {
           // Gyalogos-átkelőhely lámpája az úton: mindkét irányba
           if (allowed(r, 1)) addLight(r, Math.max(0, s - 2), 1)
@@ -516,12 +719,21 @@ export function buildWorld(osm: OsmData, line: LineString, opts: BuildOptions): 
     } else if (hw === 'stop' || hw === 'give_way') {
       const near = nearestJunction(r, s)
       if (!near || !allowed(r, near.dir)) continue
-      const sl = near.dir === 1 ? Math.min(s, near.s - near.j.core - 2) : Math.max(s, near.s + near.j.core + 2)
+      const sl = near.dir === 1 ? Math.min(s, near.s - stopBack(near.j, r, 1)) : Math.max(s, near.s + stopBack(near.j, r, -1))
       const a = stopLine(r, sl, near.dir, hw === 'stop' ? 'solid' : 'teeth')
       stops.push({ kind: hw === 'stop' ? 'stop' : 'give_way', at: offsetAt(r.pts, r.cum, sl, (a.lo + a.hi) / 2), heading: a.heading, halfSpan: (a.hi - a.lo) / 2 })
       addSign(hw === 'stop' ? 'B-002' : 'B-001', offsetAt(r.pts, r.cum, sl, a.kerb + Math.sign(a.kerb) * 1.0), -a.heading)
     } else if (hw === 'crossing' && n.tags?.crossing !== 'unmarked' && n.tags?.crossing !== 'no') {
       if ((junctionOf.get(n.id)?.arms ?? 0) >= 3) continue
+      // A kereszteződés torkolatánál lévő zebra a kereszteződés szélén kívül (nem a kereszteződésben)
+      let nj: { s: number; j: Junction } | null = null
+      for (const x of junctionS(r)) if (Math.abs(x.s - s) < 30 && (!nj || Math.abs(x.s - s) < Math.abs(nj.s - s))) nj = x
+      if (nj) {
+        // A csomópont melyik oldalán van (ha szinte rajta, azon, amerre több hely van az úton)
+        const dir: 1 | -1 = Math.abs(nj.s - s) > 0.5 ? (nj.s > s ? 1 : -1) : nj.s > r.length / 2 ? 1 : -1
+        const edge = stopBack(nj.j, r, dir) + 1.4
+        if (Math.abs(nj.s - s) < edge) s = Math.max(0, Math.min(r.length, nj.s - dir * edge))
+      }
       const roadH = headingAt(r.pts, r.cum, s)
       const hwz = halfWidthAt(r, s)
       crossings.push({ at: pointAt(r.pts, r.cum, s), heading: roadH, halfWidth: hwz })
@@ -552,6 +764,7 @@ export function buildWorld(osm: OsmData, line: LineString, opts: BuildOptions): 
   const buildings: SimBuilding[] = []
   const placed = new Grid<XZ[]>(30)
   const clearOfRoads = (p: XZ) => {
+    if (streets && (index.onPavement(p) || index.onAsphalt(p, 1.5))) return false
     if (index.junctionAt(p, PAVEMENT_W + 1) || index.inJunctionPaved(p, PAVEMENT_W + 0.5)) return false
     const hit = index.nearest(p)
     if (hit && hit.dist < halfWidthAt(hit.road, hit.s) + PAVEMENT_W + 0.4) return false
@@ -571,7 +784,8 @@ export function buildWorld(osm: OsmData, line: LineString, opts: BuildOptions): 
         if (distToRoute(p) > DECOR_M) continue
         const h = headingAt(r.pts, r.cum, sMid)
         const setback = rng() < 0.55 ? 0.3 : 1.5 + rng() * 5
-        const lateral = side * (halfWidthAt(r, sMid) + PAVEMENT_W + setback + depth / 2)
+        const outer = (side === 1 ? r.walkR?.[1] : r.walkL?.[1]) ?? halfWidthAt(r, sMid) + PAVEMENT_W
+        const lateral = side * (outer + setback + depth / 2)
         const [rx, rz] = rightOf(h)
         const b: SimBuilding = {
           x: p[0] + rx * lateral,
@@ -610,7 +824,8 @@ export function buildWorld(osm: OsmData, line: LineString, opts: BuildOptions): 
         const p = pointAt(r.pts, r.cum, s)
         if (distToRoute(p) > DECOR_M - 20) continue
         const h = headingAt(r.pts, r.cum, s)
-        const at = offsetAt(r.pts, r.cum, s, side * (halfWidthAt(r, s) + 0.7), h)
+        const walk = side === 1 ? r.walkR : r.walkL
+        const at = offsetAt(r.pts, r.cum, s, side * (walk ? walk[0] + 0.6 : halfWidthAt(r, s) + 0.7), h)
         if (!index.onPavement(at)) continue
         if (blockers.some((b) => Math.hypot(b[0] - at[0], b[1] - at[1]) < 4)) continue
         n++
@@ -666,6 +881,7 @@ export function buildWorld(osm: OsmData, line: LineString, opts: BuildOptions): 
     route,
     start,
     bounds: [minX - 60, minZ - 60, maxX + 60, maxZ + 60],
+    ...(surfaces ? { streets: surfaces } : {}),
   }
 }
 
@@ -674,5 +890,6 @@ export function indexWorld(w: World): RoadIndex {
   const index = new RoadIndex(w.roads, w.junctions)
   index.setPavements(w.pavements)
   index.setBuildings(w.buildings)
+  if (w.streets) index.setSurfaces(w.streets)
   return index
 }

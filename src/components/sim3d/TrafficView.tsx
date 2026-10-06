@@ -1,39 +1,104 @@
 import { useFrame } from '@react-three/fiber'
-import { useRef, useState } from 'react'
-import type { Group } from 'three'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { BoxGeometry, Color, InstancedMesh, Object3D, type Group } from 'three'
 import type { TrafficSystem } from '../../sim/traffic/traffic'
 import { PERSON_MODELS } from '../scene3d/models'
 import { Person } from '../scene3d/people'
-import { Car } from '../scene3d/vehicles'
+import { amberOn, INDICATOR_SPOTS, sedanParts, type SedanPart } from '../scene3d/carParts'
 
 /**
- * Az élő forgalom rajzolása: autók (a valósághű modell, saját színnel, villogó irányjelzővel) és gyalogosok
- * (járó-álló animációval). A helyzetüket minden képkockán a szimulációból veszik; a szereplők listája (ki jelent
- * meg, ki tűnt el) fél másodpercenként frissül, hogy a React ne rajzoljon újra minden képkockán.
+ * Az élő forgalom rajzolása. Az autók példányosítva: a szedán minden anyaga egy-egy háló, benne az összes autó
+ * (saját színnel), így sok autó is csak néhány rajzolási hívás (a tükrökben is). A gyalogosok (járó-álló
+ * animációval) egyenként; a listájuk (ki jelent meg, ki tűnt el) fél másodpercenként frissül.
  */
 
 /** Ennél messzebbi autót, gyalogost nem rajzolunk (a köd úgyis elfedi): gyorsabb */
-const CAR_VIEW_M = 150
-const PED_VIEW_M = 70
+const CAR_VIEW_M = 230
+const PED_VIEW_M = 80
+/** Legfeljebb ennyi autó látszik egyszerre */
+const MAX_CARS = 64
 
-function AiCarView({ traffic, id, color }: { traffic: TrafficSystem; id: number; color: string }) {
-  const ref = useRef<Group>(null)
-  const [blink, setBlink] = useState<'left' | 'right' | undefined>(undefined)
-  useFrame(() => {
-    const g = ref.current
-    if (!g) return
-    const c = traffic.cars.find((x) => x.id === id)
+const tmp = new Object3D()
+const tint = new Color()
+
+function AiCars({ traffic }: { traffic: TrafficSystem }) {
+  const [parts, setParts] = useState<SedanPart[] | null>(null)
+  useEffect(() => {
+    let alive = true
+    void sedanParts().then((p) => alive && setParts(p))
+    return () => {
+      alive = false
+    }
+  }, [])
+  const meshes = useRef<InstancedMesh[]>([])
+  const blinkers = useRef<InstancedMesh>(null)
+  const lamp = useMemo(() => new BoxGeometry(0.14, 0.08, 0.05), [])
+  useEffect(() => () => lamp.dispose(), [lamp])
+
+  useFrame(({ clock }) => {
     const v = traffic.viewer
-    g.visible = !!c && (!v || Math.hypot(c.x - v.x, c.z - v.z) < CAR_VIEW_M)
-    if (!c || !g.visible) return
-    g.position.set(c.x, 0, c.z)
-    g.rotation.set(0, -c.heading, 0)
-    const want = c.blink ?? undefined
-    if (want !== blink) setBlink(want)
+    const blinkOn = Math.floor(clock.elapsedTime * 2.5) % 2 === 0
+    let n = 0
+    let b = 0
+    for (const c of traffic.cars) {
+      if (n >= MAX_CARS) break
+      if (v && Math.hypot(c.x - v.x, c.z - v.z) > CAR_VIEW_M) continue
+      tmp.position.set(c.x, 0, c.z)
+      tmp.rotation.set(0, -c.heading, 0)
+      tmp.scale.set(1, 1, 1)
+      tmp.updateMatrix()
+      for (const m of meshes.current) {
+        if (!m) continue
+        m.setMatrixAt(n, tmp.matrix)
+        if (m.userData.paint) m.setColorAt(n, tint.set(c.color))
+      }
+      const bl = blinkers.current
+      if (bl && c.blink && blinkOn)
+        for (const spot of INDICATOR_SPOTS) {
+          if (spot.side !== c.blink) continue
+          const fx = Math.sin(c.heading)
+          const fz = -Math.cos(c.heading)
+          const rx = Math.cos(c.heading)
+          const rz = Math.sin(c.heading)
+          // A modell −Z felé néz: z < 0 elöl, x > 0 jobbra
+          tmp.position.set(c.x + rx * spot.x - fx * spot.z, spot.y, c.z + rz * spot.x - fz * spot.z)
+          tmp.updateMatrix()
+          bl.setMatrixAt(b++, tmp.matrix)
+        }
+      n++
+    }
+    for (const m of meshes.current) {
+      if (!m) continue
+      m.count = n
+      m.instanceMatrix.needsUpdate = true
+      if (m.instanceColor) m.instanceColor.needsUpdate = true
+    }
+    if (blinkers.current) {
+      blinkers.current.count = b
+      blinkers.current.instanceMatrix.needsUpdate = true
+    }
   })
+
+  if (!parts) return null
   return (
-    <group ref={ref}>
-      <Car color={color} blink={blink} />
+    <group>
+      {parts.map((p, i) => (
+        <instancedMesh
+          key={i}
+          ref={(el) => {
+            if (!el) return
+            meshes.current[i] = el
+            el.userData.paint = p.paint
+            // Színek a fényezéshez (az első setColorAt előtt is legyen, különben a shader nem kap példányszínt)
+            if (p.paint && !el.instanceColor) el.setColorAt(0, tint.set('#ffffff'))
+          }}
+          args={[p.geometry, p.material, MAX_CARS]}
+          frustumCulled={false}
+          castShadow
+          receiveShadow
+        />
+      ))}
+      <instancedMesh ref={blinkers} args={[lamp, amberOn, MAX_CARS * 2]} frustumCulled={false} />
     </group>
   )
 }
@@ -62,23 +127,19 @@ function PedView({ traffic, id, model }: { traffic: TrafficSystem; id: number; m
 }
 
 export function TrafficView({ traffic }: { traffic: TrafficSystem }) {
-  const [cast, setCast] = useState<{ cars: Array<{ id: number; color: string }>; peds: Array<{ id: number; model: number }> }>({ cars: [], peds: [] })
+  const [peds, setPeds] = useState<Array<{ id: number; model: number }>>([])
   const acc = useRef(1)
   useFrame((_, dt) => {
     acc.current += dt
     if (acc.current < 0.5) return
     acc.current = 0
-    const cars = traffic.cars.map((c) => ({ id: c.id, color: c.color }))
-    const peds = traffic.peds.map((p) => ({ id: p.id, model: p.model }))
-    const same = (a: Array<{ id: number }>, b: Array<{ id: number }>) => a.length === b.length && a.every((x, i) => x.id === b[i].id)
-    if (!same(cars, cast.cars) || !same(peds, cast.peds)) setCast({ cars, peds })
+    const next = traffic.peds.map((p) => ({ id: p.id, model: p.model }))
+    if (next.length !== peds.length || next.some((x, i) => x.id !== peds[i].id)) setPeds(next)
   })
   return (
     <>
-      {cast.cars.map((c) => (
-        <AiCarView key={c.id} traffic={traffic} id={c.id} color={c.color} />
-      ))}
-      {cast.peds.map((p) => (
+      <AiCars traffic={traffic} />
+      {peds.map((p) => (
         <PedView key={p.id} traffic={traffic} id={p.id} model={p.model} />
       ))}
     </>

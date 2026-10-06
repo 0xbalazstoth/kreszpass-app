@@ -102,7 +102,9 @@ function canopyGeometry(seed: number): BufferGeometry {
 }
 const canopies = [0, 1, 2, 3].map((s) => canopyGeometry(s * 1.37))
 
-function Tree({ seed }: { seed: number }) {
+function Tree({ seed: raw }: { seed: number }) {
+  // A mag a helyből jön, lehet negatív is: a tömbindexhez nemnegatívvá tesszük (különben nincs anyag, fehér a lomb)
+  const seed = ((Math.round(raw) % 12) + 12) % 12
   const h = 2.6 + (seed % 3) * 0.4
   const leaf = leaves[seed % leaves.length]
   return (

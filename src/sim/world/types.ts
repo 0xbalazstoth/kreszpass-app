@@ -1,4 +1,5 @@
 import type { Projection, XZ } from './project'
+import type { Poly } from './streets'
 
 /** Egy út (OSM-szakasz) a szimulátor síkjában */
 export interface Road {
@@ -30,6 +31,9 @@ export interface Road {
   roundabout: boolean
   /** Van-e burkolati jel (felezővonal) */
   marked: boolean
+  /** Járda a jobb, illetve a bal oldalon: belső és külső széle a középvonaltól (m), ha van */
+  walkR?: [number, number]
+  walkL?: [number, number]
 }
 
 /** Kereszteződés (vagy két út találkozása): kitöltő kör az úttesten */
@@ -47,6 +51,11 @@ export interface Junction {
    * metszéspontjánál. Ezek is úttestnek számítanak, így a kanyarodó autó nem megy fel a sarkon a járdára.
    */
   fillets: Array<[XZ, XZ, XZ]>
+  /**
+   * Útáganként (`${road.id}:${dir}`, dir a csomópont felé haladás iránya) a kereszteződés széle a csomóponttól (m):
+   * itt végződik az ág burkolata, és kezdődik a kereszteződésé (az osm2streets szerint)
+   */
+  trims?: Record<string, number>
 }
 
 /** Négyszög (a sarkok sorrendje körben) */
@@ -146,4 +155,14 @@ export interface World {
   start: { x: number; z: number; heading: number }
   /** [minX, minZ, maxX, maxZ] */
   bounds: [number, number, number, number]
+  /** Valósághű utcageometria (osm2streets); nélküle az utak egyszerű szalagok */
+  streets?: StreetSurfaces
+}
+
+export interface StreetSurfaces {
+  asphalt: Poly[]
+  junctions: Poly[]
+  pavement: Poly[]
+  kerbs: Poly[]
+  paint: Poly[]
 }

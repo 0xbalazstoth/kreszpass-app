@@ -1,5 +1,5 @@
-import { Canvas, useFrame } from '@react-three/fiber'
-import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
+import { Canvas, useFrame, useThree } from '@react-three/fiber'
+import { memo, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { InstancedMesh, MeshBasicMaterial, MeshStandardMaterial, Object3D, type Group } from 'three'
 import type { Look } from '../../domain/maneuvers/types'
 import type { LightState } from '../../domain/questions'
@@ -171,7 +171,27 @@ function SimLoop({ sim, input, paused, focus, onFrame }: { sim: Sim; input: SimI
 }
 
 /** A világ darabjai, táblái, lámpái és fái: csak a kocsi közelében láthatók */
-function WorldView({ sim }: { sim: Sim }) {
+/**
+ * A jelenet mátrixai képkockánként egyszer (a mozgó elemek, az autók és a gyalogosok helyének frissítése után), nem
+ * minden rajzolásnál: a tükrökkel együtt képkockánként négyszer rajzolunk, és a világ sok ezer elemét mindannyiszor
+ * végigjárni drága
+ */
+function setAutoMatrices(scene: Object3D, on: boolean) {
+  scene.matrixWorldAutoUpdate = on
+}
+
+function WorldMatrices() {
+  const scene = useThree((s) => s.scene)
+  useEffect(() => {
+    setAutoMatrices(scene, false)
+    return () => setAutoMatrices(scene, true)
+  }, [scene])
+  useFrame(() => scene.updateMatrixWorld())
+  return null
+}
+
+/** (Memoizálva: a műszerfal 10 Hz-es frissítése ne építse újra a több ezer elemes világot) */
+const WorldView = memo(function WorldView({ sim }: { sim: Sim }) {
   const q = useQuality()
   const quality = q.shadows === 0 ? 'low' : q.shadows === 1024 ? 'medium' : 'high'
   const chunks = useMemo(() => buildChunks(sim.world), [sim.world])
@@ -193,11 +213,12 @@ function WorldView({ sim }: { sim: Sim }) {
   }, [sim.world])
   const groups = useRef(new Map<string, Group>())
   const centres = useMemo(() => {
-    const m = new Map<string, [number, number]>()
-    for (const c of chunks) m.set(c.key, c.centre)
+    // Középpont és sugár (a darab legtávolabbi pontja): a darab látható, ha bármely része a látótávon belül van
+    const m = new Map<string, [number, number, number]>()
+    for (const c of chunks) m.set(c.key, [c.centre[0], c.centre[1], Math.max(c.radius, 110)])
     for (const k of decor.keys()) if (!m.has(k)) {
       const [cx, cz] = k.split(',').map(Number)
-      m.set(k, [(cx + 0.5) * 150, (cz + 0.5) * 150])
+      m.set(k, [(cx + 0.5) * 150, (cz + 0.5) * 150, 110])
     }
     return m
   }, [chunks, decor])
@@ -210,9 +231,25 @@ function WorldView({ sim }: { sim: Sim }) {
     const view = VIEW_M[quality]
     for (const [k, g] of groups.current) {
       const c = centres.get(k)
-      if (c) g.visible = Math.hypot(c[0] - x, c[1] - z) < view
+      if (c) g.visible = Math.hypot(c[0] - x, c[1] - z) - c[2] < view - 110
     }
   })
+  // A világ elemei (burkolat, házak, táblák, fák, lámpák) nem mozognak: a mátrixaikat egyszer kiszámítjuk, és nem
+  // számoljuk újra minden képkockán (a tükrökkel együtt képkockánként négyszer) – ez a legnagyobb megtakarítás.
+  // A később betöltődő modellek (pl. a lámpaoszlop) miatt pár másodperc múlva újra „befagyasztjuk”.
+  useEffect(() => {
+    const freeze = () => {
+      for (const g of groups.current.values())
+        g.traverse((o) => {
+          if (o === g) return
+          o.updateMatrix()
+          o.matrixAutoUpdate = false
+          o.matrixWorldNeedsUpdate = true
+        })
+    }
+    const ids = [window.setTimeout(freeze, 500), window.setTimeout(freeze, 3000), window.setTimeout(freeze, 8000)]
+    return () => ids.forEach((id) => window.clearTimeout(id))
+  }, [chunks, decor])
   const keys = [...centres.keys()]
   const chunkBy = new Map(chunks.map((c) => [c.key, c]))
   return (
@@ -244,9 +281,9 @@ function WorldView({ sim }: { sim: Sim }) {
       })}
     </>
   )
-}
+})
 
-export default function SimScene({ sim, input, paused, chase, onFrame }: SimSceneProps) {
+function SimSceneImpl({ sim, input, paused, chase, onFrame }: SimSceneProps) {
   const quality = useQuality()
   const focus = useMemo<[number, number, number]>(() => [sim.state.car.x, 0, sim.state.car.z], [sim])
   // A burkolati jelek a burkolat fölött, a mélységi pontatlanság (villódzás) ellen eltolva
@@ -264,6 +301,7 @@ export default function SimScene({ sim, input, paused, chase, onFrame }: SimScen
         <WorldView sim={sim} />
         <PlayerCar sim={sim} />
         {sim.traffic && <TrafficView traffic={sim.traffic} />}
+        <WorldMatrices />
         <DriverAndMirrors
           poseNow={() => ({ pose: sim.state.car })}
           look={() => sim.state.look}
@@ -274,3 +312,7 @@ export default function SimScene({ sim, input, paused, chase, onFrame }: SimScen
     </div>
   )
 }
+
+/** (Memoizálva: csak akkor rajzolódik újra, ha a szimuláció vagy a bemenet változik) */
+const SimScene = memo(SimSceneImpl)
+export default SimScene

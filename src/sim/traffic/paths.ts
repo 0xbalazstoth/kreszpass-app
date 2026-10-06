@@ -1,4 +1,5 @@
 import type { GraphEdge, RoadGraph } from '../examiner/reroute'
+import { stopBack } from '../world/junctionArms'
 import { rightLaneCentre } from '../world/lanes'
 import { cumulative, headingAt } from '../world/polyline'
 import { headingOf, projectOnSegment, wrapAngle, type XZ } from '../world/project'
@@ -171,7 +172,7 @@ export function buildPath(graph: RoadGraph, edges: GraphEdge[], models: Map<numb
       const h = projectOnSegment(x.model.j.at, pts[i], pts[i + 1])
       if (h.dist < best.d) best = { s: cum[i] + h.t * (cum[i + 1] - cum[i]), d: h.dist }
     }
-    junctions.push({ node: x.node, s: best.s, lineS: best.s - (x.model.j.core + 2), approach: x.approach, model: x.model, movement: x.movement })
+    junctions.push({ node: x.node, s: best.s, lineS: best.s - stopBack(x.model.j, x.approach.arm.road, x.approach.arm.dir), approach: x.approach, model: x.model, movement: x.movement })
   }
   junctions.sort((a, b) => a.s - b.s)
   return { pts, cum, length, edges, junctions }

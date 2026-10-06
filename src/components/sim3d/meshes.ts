@@ -1,9 +1,10 @@
-import { BufferAttribute, BufferGeometry, Matrix4 } from 'three'
+import { BufferAttribute, BufferGeometry, Matrix4, ShapeUtils, Vector2 } from 'three'
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js'
 import { chunkOf } from '../../sim/world/build'
 import { halfWidthAt } from '../../sim/world/lanes'
 import { pavedCore } from '../../sim/world/roadIndex'
 import type { XZ } from '../../sim/world/project'
+import { inPoly, type Poly } from '../../sim/world/streets'
 import type { SimBuilding, World } from '../../sim/world/types'
 import { TILE_M, worldBox, type SurfaceName } from '../scene3d/materials'
 
@@ -35,6 +36,14 @@ class Builder {
       this.nor.push(0, 1, 0)
       this.uv.push(p[0] / this.tile, -p[1] / this.tile)
     }
+  }
+
+  /** Vízszintes sokszög (lyukakkal) háromszögekre bontva */
+  poly(p: Poly, y: number) {
+    const contour = p.outer.map(([x, z]) => new Vector2(x, z))
+    const holes = p.holes.map((h) => h.map(([x, z]) => new Vector2(x, z)))
+    const all = [...p.outer, ...p.holes.flat()]
+    for (const [a, b, c] of ShapeUtils.triangulateShape(contour, holes)) this.tri(all[a], all[b], all[c], y)
   }
 
   quad(q: readonly XZ[], y: number) {
@@ -95,6 +104,8 @@ class Builder {
 export interface ChunkMeshes {
   key: string
   centre: XZ
+  /** A darab legtávolabbi pontja a középponttól (a láthatóság vizsgálatához) */
+  radius: number
   asphalt: BufferGeometry | null
   pavement: BufferGeometry | null
   kerb: BufferGeometry | null
@@ -133,7 +144,7 @@ const FLOOR_M = 3.2
 export function buildChunks(world: World): ChunkMeshes[] {
   const by = new Map<
     string,
-    { asphalt: Builder; pavement: Builder; kerb: Builder; paint: Builder; walls: Map<string, { facade: Facade; list: BufferGeometry[] }>; roofs: BufferGeometry[]; windows: WindowSlot[]; shops: WindowSlot[]; sx: number; sz: number; n: number }
+    { asphalt: Builder; pavement: Builder; kerb: Builder; paint: Builder; walls: Map<string, { facade: Facade; list: BufferGeometry[] }>; roofs: BufferGeometry[]; windows: WindowSlot[]; shops: WindowSlot[]; sx: number; sz: number; n: number; box: [number, number, number, number] }
   >()
   const chunk = (p: XZ) => {
     const key = chunkOf(p)
@@ -151,6 +162,7 @@ export function buildChunks(world: World): ChunkMeshes[] {
         sx: 0,
         sz: 0,
         n: 0,
+        box: [Infinity, Infinity, -Infinity, -Infinity] as [number, number, number, number],
       }
       by.set(key, c)
     }
@@ -159,9 +171,43 @@ export function buildChunks(world: World): ChunkMeshes[] {
     c.n++
     return c
   }
+  /** Egy sokszög darabja (a befoglaló téglalapja szerint), a darab kiterjedését is bővítve */
+  const chunkFor = (poly: Poly) => {
+    const c = chunk([(poly.bbox[0] + poly.bbox[2]) / 2, (poly.bbox[1] + poly.bbox[3]) / 2])
+    c.box = [Math.min(c.box[0], poly.bbox[0]), Math.min(c.box[1], poly.bbox[1]), Math.max(c.box[2], poly.bbox[2]), Math.max(c.box[3], poly.bbox[3])]
+    return c
+  }
+  /** Kiemelt felület (járda, szegélysáv): a teteje és a szélein a függőleges szegély (a csempék vágásvonalán nem) */
+  const raised = (poly: Poly, top: (c: ReturnType<typeof chunk>) => Builder, side: (c: ReturnType<typeof chunk>) => Builder) => {
+    const c = chunkFor(poly)
+    top(c).poly(poly, PAVEMENT_H)
+    const onCut = (a: XZ, b: XZ) => (a[0] === b[0] && Math.abs(a[0] / 50 - Math.round(a[0] / 50)) < 1e-6) || (a[1] === b[1] && Math.abs(a[1] / 50 - Math.round(a[1] / 50)) < 1e-6)
+    for (const ring of [poly.outer, ...poly.holes])
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i]
+        const b = ring[(i + 1) % ring.length]
+        const len = Math.hypot(b[0] - a[0], b[1] - a[1])
+        if (len < 0.02 || onCut(a, b)) continue
+        // A fal kifelé (a felülettől elfelé) néz
+        const nx = -(b[1] - a[1]) / len
+        const nz = (b[0] - a[0]) / len
+        const m: XZ = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]
+        const out = inPoly([m[0] + nx * 0.05, m[1] + nz * 0.05], poly) ? -1 : 1
+        side(c).wall(a, b, 0, PAVEMENT_H, [m[0] + nx * out, m[1] + nz * out])
+      }
+  }
+
+  // Valósághű utcageometria (osm2streets): sokszögekből; különben az egyszerű szalagok, körök, négyszögek
+  const st = world.streets
+  if (st) {
+    for (const p of st.asphalt) chunkFor(p).asphalt.poly(p, 0)
+    for (const p of st.pavement) raised(p, (c) => c.pavement, (c) => c.kerb)
+    for (const p of st.kerbs) raised(p, (c) => c.kerb, (c) => c.kerb)
+    for (const p of st.paint) chunkFor(p).paint.poly(p, 0.012)
+  }
 
   // Úttest: szakaszonként egy négyszög, a töréspontokon és a kereszteződésekben kitöltő kör
-  for (const r of world.roads) {
+  for (const r of st ? [] : world.roads) {
     const tapered = r.hwStart !== undefined || r.hwEnd !== undefined
     for (let i = 0; i < r.pts.length - 1; i++) {
       const a = r.pts[i]
@@ -190,14 +236,14 @@ export function buildChunks(world: World): ChunkMeshes[] {
       if (i > 0) chunk(a).asphalt.disc(a, halfWidthAt(r, r.cum[i]), 0, 12)
     }
   }
-  for (const j of world.junctions) {
+  for (const j of st ? [] : world.junctions) {
     const c = chunk(j.at)
     c.asphalt.disc(j.at, pavedCore(j), 0.001, 28)
     for (const tri of j.fillets) c.asphalt.tri(tri[0], tri[1], tri[2], 0.001)
   }
 
   // Járda: a teteje és az úttest felőli szegélykő-fal
-  for (const p of world.pavements) {
+  for (const p of st ? [] : world.pavements) {
     const c = chunk([(p.quad[0][0] + p.quad[2][0]) / 2, (p.quad[0][1] + p.quad[2][1]) / 2])
     c.pavement.quad(p.quad, PAVEMENT_H)
     // A szegély fala az úttest felé néz (a négyszög belseje felől kifelé, a 3–4. sarok felől az 1–2. felé)
@@ -257,9 +303,14 @@ export function buildChunks(world: World): ChunkMeshes[] {
 
   const out: ChunkMeshes[] = []
   for (const [key, c] of by) {
+    const centre: XZ = [c.sx / c.n, c.sz / c.n]
+    const radius = Number.isFinite(c.box[0])
+      ? Math.max(...[c.box[0], c.box[2]].flatMap((x) => [c.box[1], c.box[3]].map((z) => Math.hypot(x - centre[0], z - centre[1]))))
+      : 0
     out.push({
       key,
-      centre: [c.sx / c.n, c.sz / c.n],
+      centre,
+      radius,
       asphalt: c.asphalt.geometry(),
       pavement: c.pavement.geometry(),
       kerb: c.kerb.geometry(),

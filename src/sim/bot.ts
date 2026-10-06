@@ -6,8 +6,9 @@ import { buildJunctionModels, mustWait, routeJunctionPasses, type Mover } from '
 import type { TrafficSystem } from './traffic/traffic'
 import type { SimAction, SimState } from './sim'
 import { CENTER_F, steerLimit, type Controls } from './vehicle'
+import { stopBack } from './world/junctionArms'
 import { halfWidthAt, rightLaneCentre } from './world/lanes'
-import { lightState } from './world/lights'
+import { lightState, yellowLeft } from './world/lights'
 import { headingAt, pointAt, rightOf } from './world/polyline'
 import { projectOnSegment, wrapAngle, type XZ } from './world/project'
 import type { RoadIndex } from './world/roadIndex'
@@ -37,6 +38,8 @@ export class BotDriver {
   private ringExits: number[] = []
   private done = new Set<string>()
   private waitUntil = 0
+  /** Mióta vár elsőbbségadás miatt (s) */
+  private yieldSince: number | null = null
   private lookUntil = 0
   private look: Look = 'ahead'
   private startT: number | null = null
@@ -147,6 +150,11 @@ export class BotDriver {
         this.glance('mirror_right', t, 0.5)
         if (c.indicator !== 'right') actions.push('indicator_right')
       }
+      // A megállásig jelzünk (ha a kormány visszaforgatásakor magától kikapcsolt, újra bekapcsoljuk)
+      if (finishing && this.done.has('finish-ind') && !this.done.has('hb-end') && c.indicator !== 'right' && t > this.reengageT) {
+        this.reengageT = t + 0.6
+        actions.push('indicator_right')
+      }
     }
 
     // ---------------------------------------------------------------- kormányzás: követés a jobb oldali sávban
@@ -159,7 +167,29 @@ export class BotDriver {
     const [rx, rz] = rightOf(pathH)
     // e > 0: a sáv közepe tőlünk jobbra van
     const e = (lanePt[0] - fa[0]) * rx + (lanePt[1] - fa[1]) * rz
-    const wheel = wrapAngle(pathH - c.heading) + Math.atan2(1.4 * e, v + 1.5)
+    let wheel = wrapAngle(pathH - c.heading) + Math.atan2(1.4 * e, v + 1.5)
+    // Szegélyvédelem (mint a figyelmes vezető): ha a kocsi oldala a mostani íven néhány méterrel előrébb lelógna az
+    // úttestről, elkormányzunk attól az oldaltól
+    if (v > 0.5 && c.gear === 'D') {
+      const bend = Math.tan(c.wheel) / CAR.wheelbase
+      const reach = Math.min(7, 2 + v * 0.6)
+      let x = c.x + Math.sin(c.heading) * (CAR.front - 0.4)
+      let z = c.z - Math.cos(c.heading) * (CAR.front - 0.4)
+      let h = c.heading
+      for (let d = 0; d < reach; d += 1) {
+        h += bend
+        x += Math.sin(h)
+        z -= Math.cos(h)
+        const [qx, qz] = rightOf(h)
+        const off = [1, -1].map((k) => !this.index.onAsphalt([x + qx * k * (CAR.width / 2 + 0.3), z + qz * k * (CAR.width / 2 + 0.3)]))
+        // Csak ha az egyik oldal lóg le (keskeny úton mindkettő közel lehet: ott a sáv közepe a jó)
+        const side = off[0] && !off[1] ? 1 : off[1] && !off[0] ? -1 : undefined
+        if (side !== undefined) {
+          wheel -= side * 0.12 * (1 - d / reach)
+          break
+        }
+      }
+    }
     const steer = Math.max(-1, Math.min(1, wheel / steerLimit(v)))
 
     // ---------------------------------------------------------------- sebesség
@@ -176,6 +206,15 @@ export class BotDriver {
     const sharp = Math.max(0, ...this.ins.filter((x) => x.kind === 'turn' && x.s - s < 30 && x.s - s > -10).map((x) => x.angle ?? 0))
     if (sharp > 1.4 || curve > 1.3) vt = Math.min(vt, 11 / 3.6)
     if (sharp > 1.9 || curve > 1.7) vt = Math.min(vt, 7 / 3.6)
+    // A követendő vonal görbülete előttünk (pl. éles útkanyar kereszteződés nélkül): oldalgyorsulás legfeljebb
+    // 2,2 m/s², és időben (2 m/s²-tel) lelassítunk az ív elé
+    for (let d = 0; d <= 35; d += 2) {
+      const h0 = headingAt(lane.pts, lane.cum, this.laneS + d, 1.5)
+      const h1 = headingAt(lane.pts, lane.cum, this.laneS + d + 5, 1.5)
+      const k = Math.abs(wrapAngle(h1 - h0)) / 5
+      if (k < 0.02) continue
+      vt = Math.min(vt, Math.sqrt(2.2 / k + 2 * 2 * d))
+    }
     // Megállás a STOP-nál, a tilos jelzésnél és a végén
     const stopAt = (lineS: number) => Math.sqrt(2 * 2.2 * Math.max(0, lineS - 1.2 - front))
     // A vizsgabiztossal azonos módon: a kocsi eleje és a megállási vonal, a vonal irányához képest
@@ -207,7 +246,20 @@ export class BotDriver {
       const d = lineAhead(l.stopAt, l.heading, 6)
       if (d === null) return
       const state = lightState(this.world, l, t)
-      const need = state === 'red' || state === 'red_yellow' || (state === 'yellow' && (v * v) / (2 * 4) + v * 0.8 + 1 < d)
+      let need = state === 'red' || state === 'red_yellow' || (state === 'yellow' && (v * v) / (2 * 4) + v * 0.8 + 1 < d)
+      // Sárgánál akkor is megáll (erősebben fékezve), ha a pirosig nem érne át a vonalon, vagy egy lassú autó mögött
+      // ragadna (különben pirosban hajtana át)
+      if (state === 'yellow' && !need && (v * v) / (2 * 6) + 0.5 < d) {
+        const late = d / Math.max(0.5, v) > yellowLeft(this.world, l, t) - 0.2
+        const cx0 = c.x + Math.sin(c.heading) * CENTER_F
+        const cz0 = c.z - Math.cos(c.heading) * CENTER_F
+        const queued = (this.opts.traffic?.cars ?? []).some((o) => {
+          const along = (o.x - cx0) * Math.sin(c.heading) - (o.z - cz0) * Math.cos(c.heading)
+          const lat = Math.abs((o.x - cx0) * Math.cos(c.heading) + (o.z - cz0) * Math.sin(c.heading))
+          return along > 0 && along < d + 14 && lat < 2 && o.v < Math.max(3, v - 2)
+        })
+        need = late || queued
+      }
       if (need) {
         vt = Math.min(vt, brakeFor(d))
         stopDist = Math.min(stopDist, d)
@@ -232,21 +284,26 @@ export class BotDriver {
         if (gap < 30) stopDist = Math.min(stopDist, gap - 1.5)
       }
       // Elsőbbség a kereszteződésben (a többi járművel azonos szabály, nagyobb ráhagyással)
-      const pass = tr.passes.find((x) => x.s > s - (tr.models.get(x.node)?.j.core ?? 5))
-      if (pass && !this.opts.ignorePriority) {
+      // Minden előttünk lévő kereszteződés, amelynek a megállási vonala közel van (egymásba érő kereszteződéseknél több is)
+      const passes = this.opts.ignorePriority ? [] : tr.passes.filter((x) => x.s > s - (tr.models.get(x.node)?.j.core ?? 5) && x.s < s + 120)
+      let yielding = false
+      for (const pass of passes) {
         const m = tr.models.get(pass.node)!
-        const lineDist = pass.s - (m.j.core + 2) - front
-        if (lineDist > -0.5 && lineDist < 45) {
-          const others: Mover[] = tr.presencesAt(pass.node)
-          const me: Mover = { approach: pass.approach, movement: pass.movement, eta: Infinity, inside: false, waiting: v < 0.5 && lineDist < 5 }
-          // A többiekkel azonos szabály, nagyobb ráhagyással (4,5 s)
-          const conflict = mustWait(m, me, others, 4.5)
-          if (conflict) {
-            vt = Math.min(vt, brakeFor(lineDist))
-            stopDist = Math.min(stopDist, lineDist)
-          }
+        const lineDist = pass.s - stopBack(m.j, pass.approach.arm.road, pass.approach.arm.dir) - front
+        if (lineDist <= -0.5 || lineDist >= 45) continue
+        const others: Mover[] = tr.presencesAt(pass.node)
+        const me: Mover = { approach: pass.approach, movement: pass.movement, eta: Infinity, inside: false, waiting: v < 0.5 && lineDist < 5 }
+        // A többiekkel azonos szabály, nagyobb ráhagyással (4,5 s); hosszabb várakozás után a megállási vonalánál
+        // álló (minket előre engedő) elsőbbségi járművet nem várja meg
+        const waited = this.yieldSince === null ? 0 : t - this.yieldSince
+        if (mustWait(m, me, waited > 6 ? others.filter((o) => !(o.still && o.waiting)) : others, 4.5)) {
+          yielding = true
+          vt = Math.min(vt, brakeFor(lineDist))
+          stopDist = Math.min(stopDist, lineDist)
         }
       }
+      if (yielding) this.yieldSince ??= t
+      else if (v > 2) this.yieldSince = null
       // A saját sávvonalunk a következő pár méteren: ha ott áll vagy oda ér egy jármű (bármilyen irányból), megállunk
       const lane = this.lanePath()
       for (let d = 2; d <= Math.max(6, v * 1.4 + 4); d += 2) {
@@ -259,10 +316,35 @@ export class BotDriver {
           break
         }
       }
+      // Vészfék: a tényleges helyünkből a mostani kormányállással a következő pár méteren (az útvonal-követés
+      // pontatlansága ne rejtsen el közeli akadályt; messzebbre nem, mert a kanyarban a kormány még visszatér)
+      {
+        let px = cx
+        let pz = cz
+        let h = c.heading
+        const bend = Math.tan(c.wheel) / CAR.wheelbase
+        for (let d = 1; d <= 3; d += 1) {
+          h += bend
+          px += Math.sin(h)
+          pz -= Math.cos(h)
+          const box = boxOf(px, pz, h, CAR.length + 0.2, CAR.width + 0.2)
+          if (tr.cars.some((o) => Math.hypot(o.x - px, o.z - pz) < 6 && overlap(box, boxOf(o.x, o.z, o.heading, CAR.length, CAR.width)))) {
+            stopDist = Math.min(stopDist, d - 1)
+            vt = Math.min(vt, brakeFor(d))
+            break
+          }
+        }
+      }
       // Gyalogos a zebrán vagy lelépni készül
       for (const rc of tr.routeCrossings) {
-        const d = rc.s - front
+        // A haladás (útvonal-követés) kanyarban késhet: a zebra távolságát a tényleges sávvonalunk mentén is mérjük
+        let d = rc.s - front
         if (d < -1 || d > 70) continue
+        const lane = this.lanePath()
+        const cr = this.world.crossings[rc.index]
+        const near = this.nearestOn(lane.pts, lane.cum, cr.at, this.laneS + d)
+        const pt = pointAt(lane.pts, lane.cum, near)
+        if (Math.hypot(pt[0] - cr.at[0], pt[1] - cr.at[1]) < cr.halfWidth + 2) d = Math.min(d, near - this.laneS - (CAR.front - CAR.wheelbase))
         if (tr.crossingBusy(rc.index, true)) {
           vt = Math.min(vt, brakeFor(d - 3))
           stopDist = Math.min(stopDist, d - 3)
@@ -336,6 +418,12 @@ export class BotDriver {
         return sum / (2 * k + 1)
       })
     }
+    // A simított oldaltávolság sem viheti a kocsit a szegélyhez: az ott lévő úttest szélétől legalább 25 cm (a
+    // szélesedő út felé csak ott sorol át, ahol már szélesebb a burkolat)
+    lats = lats.map((v, i) => {
+      const lim = this.lateralLimits(ss[i], v)
+      return lim ? Math.max(lim[0], Math.min(lim[1], v)) : v
+    })
     let pts: XZ[] = ss.map((s, i) => {
       const p = pointAt(route.pts, route.cum, s)
       const [rx, rz] = rightOf(headingAt(route.pts, route.cum, s, 3))
@@ -344,6 +432,8 @@ export class BotDriver {
     // A kereszteződésekben ugyanazon az íven, mint a többi jármű (a megállási vonaltól a kijáratig): így az elsőbbség
     // és az ütközés-elkerülés ugyanazzal a mozgással számol
     const models = buildJunctionModels(this.world)
+    /** A kanyarodó ívek pontjai (ezeket nem igazítjuk: a többi járművel egyeztetett pályák) */
+    const turning: boolean[] = pts.map(() => false)
     for (const p of routeJunctionPasses(this.world, models)) {
       if (!p.movement) continue
       const curve = p.movement.curve
@@ -365,11 +455,74 @@ export class BotDriver {
       if (a < 0 || b <= a) continue
       pts.splice(a, b - a + 1, ...curve)
       ss.splice(a, b - a + 1, ...curve.map((_, k) => ss[a] + ((ss[b] - ss[a]) * k) / (curve.length - 1)))
+      turning.splice(a, b - a + 1, ...curve.map(() => p.approach.turn !== 'straight'))
     }
+    pts = this.keepOnAsphalt(pts, turning)
     const cum = [0]
     for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]))
     this.lane = { pts, cum }
     return this.lane
+  }
+
+  /**
+   * A követendő vonal igazítása: ahol a kocsi egyik oldala (25 cm ráhagyással) lelógna az úttestről (pl. a
+   * kanyarodó ív egy sziget vagy sarok orránál), a vonalat a másik oldal felé toljuk, majd kisimítjuk
+   */
+  private keepOnAsphalt(pts0: XZ[], turning: boolean[]): XZ[] {
+    let pts = pts0.map((p) => [p[0], p[1]] as XZ)
+    const half = CAR.width / 2 + 0.25
+    const inside = turning
+    for (let pass = 0; pass < 16; pass++) {
+      let moved = false
+      pts = pts.map((p, i) => {
+        // A kanyarodó ív a többi járművel egyeztetett (a várakozók mellett halad el): azt nem toljuk
+        if (inside[i]) return p
+        const a = pts[Math.max(0, i - 1)]
+        const b = pts[Math.min(pts.length - 1, i + 1)]
+        const len = Math.hypot(b[0] - a[0], b[1] - a[1])
+        if (len < 0.01) return p
+        const rx = -(b[1] - a[1]) / len
+        const rz = (b[0] - a[0]) / len
+        const right = this.index.onAsphalt([p[0] + rx * half, p[1] + rz * half])
+        const left = this.index.onAsphalt([p[0] - rx * half, p[1] - rz * half])
+        if (right === left) return p
+        moved = true
+        const k = right ? 0.25 : -0.25
+        return [p[0] + rx * k, p[1] + rz * k] as XZ
+      })
+      if (!moved) break
+      // Simítás (a kis tolások ne törjék meg a vonalat)
+      pts = pts.map((p, i) => {
+        if (i === 0 || i === pts.length - 1 || inside[i]) return p
+        const a = pts[i - 1]
+        const b = pts[i + 1]
+        return [(a[0] + 2 * p[0] + b[0]) / 4, (a[1] + 2 * p[1] + b[1]) / 4] as XZ
+      })
+    }
+    return pts
+  }
+
+  /**
+   * Az útvonaltól mért oldaltávolság határai, hogy a kocsi az úttesten maradjon: a megrajzolt úttestet keresztben
+   * végigmérve a kívánt hely körül (így a szigetet, a szűkülést is látja); a kereszteződés belsejében nincs határ
+   */
+  private lateralLimits(s: number, want: number): [number, number] | null {
+    const { route } = this.world
+    const p = pointAt(route.pts, route.cum, s)
+    if (this.index.inJunctionPaved(p)) return null
+    const [rx, rz] = rightOf(headingAt(route.pts, route.cum, s, 4))
+    const on = (l: number) => this.index.onAsphalt([p[0] + rx * l, p[1] + rz * l])
+    // A kívánt helyhez legközelebbi úttestpont (a középvonal felé keresve)
+    let start: number | null = null
+    for (let k = 0; k <= 16 && start === null; k++) for (const l of [want - Math.sign(want || 1) * k * 0.25, want + Math.sign(want || 1) * k * 0.25]) if (start === null && on(l)) start = l
+    if (start === null) return null
+    let lo = start
+    let hi = start
+    while (hi - start < 20 && on(hi + 0.2)) hi += 0.2
+    while (start - lo < 20 && on(lo - 0.2)) lo -= 0.2
+    const m = CAR.width / 2 + 0.3
+    if (hi - lo < 2 * m) return [(lo + hi) / 2, (lo + hi) / 2]
+    return [lo + m, hi - m]
   }
 
   /** Van-e valódi kereszteződés az útvonalon a két pont között */

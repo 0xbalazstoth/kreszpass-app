@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { loadOsmForRoute } from '../../data/osmSource'
 import { roadSignsAlongRoute } from '../../data/roadSigns'
 import { signUrl, speedSignCode } from '../../data/signs'
@@ -18,6 +18,7 @@ import { BotInput } from '../../sim/input/botInput'
 import { KEY_HELP, KeyboardInput } from '../../sim/input/keyboard'
 import { seedOf } from '../../sim/rng'
 import { createSim, NOTICE_S, type Sim } from '../../sim/sim'
+import { initStreets } from '../../sim/world/streets'
 import { CENTER_F } from '../../sim/vehicle'
 import { buildWorld } from '../../sim/world/build'
 import { buildRoadGraph } from '../../sim/examiner/reroute'
@@ -143,6 +144,10 @@ const TOAST_S = 7
 
 export function FreeDrivePage({ routeId }: { routeId: string }) {
   const [sim, setSim] = useState<Sim | null>(null)
+  const simRef = useRef<Sim | null>(null)
+  useEffect(() => {
+    simRef.current = sim
+  }, [sim])
   const [situations, setSituations] = useState<Situation[]>([])
   const [status, setStatus] = useState('Útvonal betöltése…')
   const [error, setError] = useState<string | null>(null)
@@ -162,6 +167,11 @@ export function FreeDrivePage({ routeId }: { routeId: string }) {
   const [demoInput, setDemoInput] = useState<BotInput | null>(null)
   const startedAt = useRef(0)
   const input = useMemo(() => new KeyboardInput(), [])
+  // Állandó függvény: a 3D jelenet ne rajzolódjon újra a műszerfal minden frissítésekor
+  const onFrame = useCallback(() => {
+    const s = simRef.current
+    if (s) examiner.current?.update(s.state)
+  }, [])
 
   // Betöltés: útvonal, helyi térképadatok, helyzetek és táblák, majd a világ felépítése
   useEffect(() => {
@@ -174,6 +184,9 @@ export function FreeDrivePage({ routeId }: { routeId: string }) {
       const osm = await loadOsmForRoute(route.line)
       if (ctrl.signal.aborted) return
       setStatus('A város felépítése…')
+      // Valósághű utcageometria (osm2streets, WebAssembly); ha nem töltődik be, egyszerűbb utakkal épül a város
+      await initStreets()
+      if (ctrl.signal.aborted) return
       await new Promise((r) => setTimeout(r, 0))
       const stored = await situationsOf(route.id)
       const sits = stored.length ? stored : generateSituations(route.line, osm.data, { routeId: route.id })
@@ -186,8 +199,8 @@ export function FreeDrivePage({ routeId }: { routeId: string }) {
       const q = currentQuality()
       const traffic = new TrafficSystem(world, buildRoadGraph(world), s.index, models, routeJunctionPasses(world, models), {
         seed: Math.floor(Math.random() * 1e9),
-        cars: q === 'low' ? 5 : q === 'medium' ? 8 : 12,
-        peds: q === 'low' ? 4 : q === 'medium' ? 8 : 12,
+        cars: q === 'low' ? 10 : q === 'medium' ? 16 : 22,
+        peds: q === 'low' ? 6 : q === 'medium' ? 10 : 16,
         directors: true,
       })
       s.traffic = traffic
@@ -319,7 +332,7 @@ export function FreeDrivePage({ routeId }: { routeId: string }) {
       {sim ? (
         <Fallback fallback={<p className="status error sim-message">A 3D nézet nem indult el.</p>}>
           <Suspense fallback={<p className="sim-message muted">3D betöltése…</p>}>
-            <SimScene sim={sim} input={demoInput ?? input} paused={paused} chase={chase} onFrame={() => examiner.current?.update(sim.state)} />
+            <SimScene sim={sim} input={demoInput ?? input} paused={paused} chase={chase} onFrame={onFrame} />
           </Suspense>
         </Fallback>
       ) : (

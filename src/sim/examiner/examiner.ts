@@ -4,6 +4,7 @@ import type { SimState } from '../sim'
 import { conflict, mustYield, relativeSide, type Movement } from '../traffic/junctions'
 import type { TrafficSystem } from '../traffic/traffic'
 import { CENTER_F } from '../vehicle'
+import { stopBack } from '../world/junctionArms'
 import { dividerOf, halfWidthAt } from '../world/lanes'
 import { lightState } from '../world/lights'
 import { forwardOf, rightOf } from '../world/polyline'
@@ -399,14 +400,15 @@ export class Examiner {
           if (this.passChecked.has(i)) return
           const m = tr.models.get(p.node)
           if (!m) return
-          const line = p.s - (m.j.core + 2)
+          const line = p.s - stopBack(m.j, p.approach.arm.road, p.approach.arm.dir)
           if (ps + 2.2 < line || ps > p.s + m.j.core) return
           this.passChecked.add(i)
           // Csak akinek a mozgása keresztezi a miénket, és elsőbbsége van (vagy már bent van a kereszteződésben)
           const crosses = (mv: Movement | null) => !p.movement || !mv || conflict(m, p.movement, mv)
           const others = tr
             .presencesAt(p.node)
-            .filter((o) => crosses(o.movement) && mustYield(p.approach, o.approach) && (o.inside || o.eta < 3) && !(o.waiting && mustYield(o.approach, p.approach)))
+            // (a megállási vonalánál álló, minket előre engedő jármű nem: őt nem kényszerítjük fékezésre)
+            .filter((o) => crosses(o.movement) && mustYield(p.approach, o.approach) && (o.inside || o.eta < 3) && !(o.waiting && (mustYield(o.approach, p.approach) || o.still)))
           if (!others.length) return
           const side = relativeSide(p.approach.arm, others[0].approach.arm)
           const who =

@@ -99,7 +99,8 @@ export function stepSim(sim: Pick<Sim, 'index'>, s: SimState, ctl: Controls): Si
     car = { ...s.car, speed: 0 }
   }
 
-  const onKerb = wheels.some((w) => sim.index.onPavement(w) && !sim.index.onAsphalt(w))
+  // A kerék akkor van fent a szegélyen, ha a felfekvése legalább 15 cm-re a járdán van (a súrolás még nem felhajtás)
+  const onKerb = wheels.some((w) => sim.index.onPavement(w) && !sim.index.onAsphalt(w, 0.15))
   const offRoad = wheels.every((w) => !sim.index.onAsphalt(w) && !sim.index.onPavement(w))
   if (onKerb && !s.onKerb) events.push({ kind: 'kerb', t, at: [car.x, car.z] })
   // A szegélyre felhajtás lassít (zökken)

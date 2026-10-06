@@ -58,9 +58,13 @@ hangos válasz (a sorszám kimondásával), ha a böngésző támogatja.
 Az útvonallistán a **Vezetés** gombbal a mentett útvonaladon magad vezetsz: kormányzol, gázt adsz, fékezel, indexelsz,
 tükörbe és hátra nézel. Nincs kérdés: a helyzet maga a kérdés, a mozdulataid a válasz.
 
-- **A város a valódi térképből épül** (a helyi OpenStreetMap-adatokból): az utak valódi szélességgel és sávszámmal, a sáv
-  megszűnésénél fokozatosan keskenyedve, kereszteződések lekerekített sarkokkal, járdák szegélykővel, felezővonal, megállási
-  vonal, zebra, táblák, működő jelzőlámpák, házsorok, fák, lámpák.
+- **A város a valódi térképből épül** (a helyi OpenStreetMap-adatokból). Az utcák geometriáját az
+  [osm2streets](https://github.com/a-b-street/osm2streets) (A/B Street) készíti: sávonként megrajzolt úttest a valódi
+  sávszámmal, parkolósáv a lakóutcákon, kereszteződések valódi alakja (a befutó utak levágásával), járda mindkét oldalon,
+  felezővonal, sávelválasztó, irányjelző nyilak. A szegélyek a kereszteződésekben ívesen lekerekítettek, a járda követi
+  őket; a kis szigetek (pl. minikörforgalom) átjárhatók. A szimuláció ugyanezt használja: a kerék akkor van fent a
+  szegélyen, ha a megrajzolt járdára ér, a megállási vonal a kereszteződés valódi szélénél van, a táblák és a lámpák a
+  járdán állnak. Mellette megállási vonal, zebra, táblák, működő jelzőlámpák, házsorok, fák, lámpák.
 - **Táblák mindenhol**: az OpenStreetMap-ben felvett táblák mellett a szabályokkal összhangban kitalált táblázás: a különböző
   rangú utak kereszteződésében Főútvonal és Elsőbbségadás kötelező (cápafoggal), körforgalom, az egyirányú utca két végén
   „Egyirányú forgalmú út” és „Behajtani tilos”, sebességkorlátozás, ahol változik a megengedett sebesség. Az egyenrangú
@@ -187,6 +191,8 @@ iPhone-on Safariban megnyitva a *Megosztás → Hozzáadás a Főképernyőhöz*
 | 3D | three.js, React Three Fiber |
 | 3D textúrák, égbolt, lámpa, útelzáró | Poly Haven (polyhaven.com), CC0 közkincs; `npm run assets3d` tölti le, a forrás és a szerzők a `public/3d/manifest.json`-ban |
 | 3D gyalogosok, munkás, személyautó | Quaternius modelljei a Poly Pizzáról (poly.pizza), CC0 közkincs; szintén az `npm run assets3d` tölti le |
+| Utcageometria a szimulátorban | osm2streets (A/B Street), Apache-2.0, WebAssembly (`osm2streets-js`) |
+| Sokszögműveletek (szegélyívek, csempézés) | Angus Johnson Clipper könyvtára, Boost-licenc (`js-angusj-clipper`, MIT) |
 
 Az adatok csak a böngészőben (IndexedDB) tárolódnak. Más eszközre a Beállítások → *Mentés fájlba* és
 *Visszatöltés fájlból* funkcióval vihetők át.

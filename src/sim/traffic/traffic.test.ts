@@ -84,7 +84,7 @@ describe.runIf(hasLocalTiles())('élő forgalom a valódi utcákon', () => {
   })
 
   it('öt perc alatt az autók nem ütköznek egymásba, és nem ragadnak be', () => {
-    const tr = new TrafficSystem(world, graph, index, models, routeJunctionPasses(world, models), { seed: 5, cars: 24, peds: 10, directors: false })
+    const tr = new TrafficSystem(world, graph, index, models, routeJunctionPasses(world, models), { seed: 5, cars: 36, peds: 16, directors: false })
     // A vezető a város közepén áll, félreállva (ne zavarja a forgalmat)
     const mid = world.route.pts[Math.floor(world.route.pts.length / 2)]
     const player = { x: mid[0] + 200, z: mid[1] + 200, heading: 0, speed: 0 }

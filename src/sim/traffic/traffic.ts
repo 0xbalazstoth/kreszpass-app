@@ -1,14 +1,15 @@
 import { CAR } from '../../domain/maneuvers/geometry'
 import type { GraphEdge, RoadGraph } from '../examiner/reroute'
 import { rngFrom } from '../rng'
+import { stopBack } from '../world/junctionArms'
 import { lightState } from '../world/lights'
 import { forwardOf, rightOf } from '../world/polyline'
 import { projectOnSegment, wrapAngle, type XZ } from '../world/project'
 import type { RoadIndex } from '../world/roadIndex'
-import type { World } from '../world/types'
+import type { Road, World } from '../world/types'
 import { pointAt } from '../world/polyline'
 import { idmAccel, IDM_DEFAULT, type IdmParams } from './idm'
-import { mustWait, type JunctionModel, type Mover, type RoutePass } from './junctions'
+import { mustWait, mustYield, type JunctionModel, type Mover, type RoutePass } from './junctions'
 import { buildPath, pathHeading, randomWalk, walkBack, type Path } from './paths'
 import { boxOf, overlap } from '../sim'
 
@@ -94,9 +95,13 @@ export function etaOf(d: number, v: number, a = 1.5): number {
 }
 
 const COLORS = ['#b91c1c', '#e5e7eb', '#111827', '#1d4ed8', '#9ca3af', '#065f46', '#92400e', '#f59e0b', '#475569', '#7c2d12']
-const SPAWN_MIN = 90
+const SPAWN_MIN = 70
 const SPAWN_MAX = 260
-const DESPAWN = 330
+/** Előttünk ennél közelebb nem jelenik meg autó (a köd 70–220 m között sűrűsödik: ott már alig látszik) */
+const HIDDEN_AHEAD = 190
+/** Mögöttünk (a tükörben) ennél közelebb nem jelenik meg */
+const HIDDEN_BEHIND = 130
+const DESPAWN = 300
 const PED_DESPAWN = 220
 const HALF_LEN = CAR.length / 2
 /** Ezen belül érkező jármű miatt nem hajt be (s) */
@@ -122,6 +127,10 @@ export class TrafficSystem {
   private t = 0
   private playerStill = 0
   private lastPlayer: PlayerCar | null = null
+  /** Lehetséges megjelenési helyek a vezető körül (útszakaszok, a fontos utak nagyobb súllyal); másodpercenként frissül */
+  private spots: Array<{ road: Road; seg: number; w: number }> = []
+  private spotsTotal = 0
+  private spotsAt = -Infinity
 
   /** A vezető utolsó ismert helye (a rajzolás ehhez méri a távolságot) */
   get viewer(): PlayerCar | null {
@@ -151,10 +160,10 @@ export class TrafficSystem {
     const m = this.models.get(p.node)!
     const d = p.s - this.playerS
     if (d > 80) return null
-    const lineDist = d - (m.j.core + 2) - (CAR.front - 1.35)
+    const lineDist = d - stopBack(m.j, p.approach.arm.road, p.approach.arm.dir) - (CAR.front - 1.35)
     // Bent van: az eleje már túl van a megállási vonalán, és még nem hagyta el a kereszteződést
     const inside = lineDist < -0.5 && d > -(m.j.core + 1)
-    return { node: p.node, approach: p.approach, movement: p.movement, eta: etaOf(d, player.speed), inside, waiting: player.speed < 0.5 && lineDist < 6 && lineDist > -1 }
+    return { node: p.node, approach: p.approach, movement: p.movement, eta: etaOf(d, player.speed), inside, waiting: player.speed < 0.5 && lineDist < 6 && lineDist > -1, still: player.speed < 0.1 }
   }
 
   /**
@@ -171,7 +180,7 @@ export class TrafficSystem {
       const core = pj.model.j.core
       if (d < -(core + 2) || d > 90) continue
       const lineDist = pj.lineS - (c.s + HALF_LEN)
-      out.push({ car: c, approach: pj.approach, movement: pj.movement, eta: etaOf(d, c.v), inside: lineDist < -0.5 && d > -(core + 1), waiting: c.v < 0.5 && lineDist < 5 && lineDist > -1 })
+      out.push({ car: c, approach: pj.approach, movement: pj.movement, eta: etaOf(d, c.v), inside: lineDist < -0.5 && d > -(core + 1), waiting: c.v < 0.5 && lineDist < 5 && lineDist > -1, still: c.v < 0.1 })
     }
     return out
   }
@@ -205,7 +214,9 @@ export class TrafficSystem {
       (c) =>
         c.s < c.path.length - 2 &&
         Math.hypot(c.x - player.x, c.z - player.z) < DESPAWN &&
-        !((c.stuckFor > 30 || (c.stuckFor > 15 && c.blocker !== null)) && Math.hypot(c.x - player.x, c.z - player.z) > 50),
+        !((c.stuckFor > 30 || (c.stuckFor > 15 && c.blocker !== null)) && Math.hypot(c.x - player.x, c.z - player.z) > 50) &&
+        // Végső eset: a vezetővel kölcsönösen egymást blokkolják (a vezető is áll, egyikük sem tud kitérni)
+        !(c.stuckFor > 40 && c.blocker === -1 && this.playerStill > 20),
     )
     for (const p of this.peds) this.walk(p, dt)
     this.peds = this.peds.filter((p) => Math.hypot(p.x - player.x, p.z - player.z) < PED_DESPAWN && !(p.mode === 'cross' && !p.target))
@@ -225,14 +236,22 @@ export class TrafficSystem {
     const pAlong = (player.x - c.x) * Math.sin(c.heading) + (player.z - c.z) * -Math.cos(c.heading)
     const pLat = Math.abs((player.x - c.x) * Math.cos(c.heading) + (player.z - c.z) * Math.sin(c.heading))
     const playerAhead = !(pAlong < -3 && pLat < 1.8)
-    const playerNear = playerAhead && Math.hypot(player.x - c.x, player.z - c.z) < reach + 7
+    // A vezető is halad: ahol a következő pillanatokban lesz, az is számít (az oldalról kihajtó ne vágjon elé)
+    const pReach = player.speed * (reach / Math.max(2, c.v))
+    const playerNear = playerAhead && Math.hypot(player.x - c.x, player.z - c.z) < reach + 7 + pReach
+    const pfx = Math.sin(player.heading)
+    const pfz = -Math.cos(player.heading)
     for (let d = 1.5; d <= reach + 0.01; d += 2) {
       const s = Math.min(c.path.length, c.s + d)
       const p = pointAt(c.path.pts, c.path.cum, s)
       const mine = boxOf(p[0], p[1], pathHeading(c.path, s), CAR.length + growL, CAR.width + growW)
-      if (playerNear && overlap(mine, boxOf(player.x, player.z, player.heading, CAR.length, CAR.width))) return -1
       // Ennyi idő múlva érnénk oda: a többiek akkori helyét is nézzük (az oldalról érkezőt is időben észrevesszük)
       const tAt = d / Math.max(2, c.v)
+      if (playerNear && overlap(mine, boxOf(player.x, player.z, player.heading, CAR.length, CAR.width))) return -1
+      if (playerNear && !exact && player.speed > 0.5) {
+        const ahead = player.speed * tAt
+        if (overlap(mine, boxOf(player.x + pfx * ahead, player.z + pfz * ahead, player.heading, CAR.length + 1, CAR.width + 0.3))) return -1
+      }
       for (const o of near) {
         // A mögöttünk lévő nem akadály
         if ((o.x - c.x) * Math.sin(c.heading) + (o.z - c.z) * -Math.cos(c.heading) < 0) continue
@@ -262,7 +281,9 @@ export class TrafficSystem {
       if (x !== c.id || Math.min(...chain) !== c.id) continue
       if (chain.some((id) => (byId.get(id)?.v ?? 0) > 0.3)) continue
       // Ha a pontos teste elfér, mehet; ha 20 s után sem oldódik, a többi AI-autón átcsúszva is (a vezetőn soha)
-      if (this.blockerOf(c, player, true) === null || (c.stuckFor > 20 && this.blockerOf(c, player, true) !== -1)) c.free = true
+      // (a körben a legrégebben álló ideje számít: a döcögve araszoló autó ideje újra és újra lenullázódik)
+      const longest = Math.max(...chain.map((id) => byId.get(id)?.stuckFor ?? 0))
+      if (this.blockerOf(c, player, true) === null || (longest > 20 && this.blockerOf(c, player, true) !== -1)) c.free = true
     }
   }
 
@@ -318,7 +339,8 @@ export class TrafficSystem {
       if (!hold && d < 40) {
         // Elsőbbség és foglaltság: csak azok számítanak, akiknek a mozgása keresztezi a miénket
         const others: Mover[] = this.presencesAt(pj.node).filter((x) => x.car !== c)
-        if (me && me.node === pj.node) others.push(me)
+        // A vezető ugyanebben (vagy a szomszédos, pl. osztott pályás út másik felének) kereszteződésében
+        if (me && (me.node === pj.node || this.nearJunction(me.node, pj.model.j.at))) others.push(me)
         const myself: Mover = { approach: pj.approach, movement: pj.movement, eta: d / Math.max(0.5, c.v), inside: false, waiting: c.v < 0.5 && d < 5 }
         const waited = c.waitSince === null ? 0 : this.t - c.waitSince
         // Nem hajt be, ha a kijárat után nincs hely (ne álljon meg a kereszteződés közepén)
@@ -328,10 +350,14 @@ export class TrafficSystem {
           const q = pointAt(c.path.pts, c.path.cum, Math.min(c.path.length, exitS + k))
           exitBlocked = this.cars.some((o) => o !== c && o.v < 2 && Math.hypot(o.x - q[0], o.z - q[1]) < 2.5)
         }
-        if (exitBlocked || mustWait(pj.model, myself, others, YIELD_ETA, waited)) {
+        // Udvariasság: ha a vezető már régóta vár a mellékútról (sűrű forgalomban), az elsőbbséggel érkező megáll a
+        // vonalánál, és előre engedi
+        const courtesy =
+          !!me && me.waiting && this.playerStill > 10 && d > 4 && (me.node === pj.node || this.nearJunction(me.node, pj.model.j.at)) && mustYield(me.approach, pj.approach)
+        if (exitBlocked || courtesy || mustWait(pj.model, myself, others, YIELD_ETA, waited)) {
           c.waitSince ??= this.t
           hold = true
-        } else c.waitSince = null
+        } else if (c.v > 2) c.waitSince = null // csak ha már tényleg elindult (különben a hosszú várakozás „elfelejtődik”, és újra vár)
       }
       if (hold) stopAt(pj.lineS)
     }
@@ -394,29 +420,65 @@ export class TrafficSystem {
     return c
   }
 
+  private nearJunction(node: number, at: XZ): boolean {
+    const j = this.models.get(node)?.j
+    return !!j && Math.hypot(j.at[0] - at[0], j.at[1] - at[1]) < 25
+  }
+
   private freeAt(p: XZ, r = 15): boolean {
     return !this.cars.some((c) => Math.hypot(c.x - p[0], c.z - p[1]) < r)
   }
 
+  /** A vezető körüli útszakaszok, ahol autó jelenhet meg: a forgalmasabb (rangosabb, többsávos) utakon több */
+  private refreshSpots(player: PlayerCar) {
+    this.spots = []
+    this.spotsTotal = 0
+    for (const road of this.world.roads)
+      for (let seg = 0; seg < road.pts.length - 1; seg++) {
+        const a = road.pts[seg]
+        const b = road.pts[seg + 1]
+        const len = Math.hypot(b[0] - a[0], b[1] - a[1])
+        if (len < 8) continue
+        const d = Math.hypot((a[0] + b[0]) / 2 - player.x, (a[1] + b[1]) / 2 - player.z)
+        if (d < SPAWN_MIN - 30 || d > SPAWN_MAX + 30) continue
+        const w = len * (1 + (road.rank * road.rank) / 3) * Math.max(1, (road.lanesFwd + road.lanesBack) / 2)
+        this.spots.push({ road, seg, w })
+        this.spotsTotal += w
+      }
+    this.spotsAt = this.t
+  }
+
+  private pickSpot(): { road: Road; seg: number } | null {
+    let r = this.rnd() * this.spotsTotal
+    for (const sp of this.spots) if ((r -= sp.w) <= 0) return sp
+    return this.spots[this.spots.length - 1] ?? null
+  }
+
   private spawn(player: PlayerCar, pfx: number, pfz: number) {
-    // Háttérforgalom: a vezetőtől 90–260 m-re, nem közvetlenül előtte (ne „teremjen” a szeme előtt)
-    for (let tries = 0; tries < 3 && this.cars.filter((c) => !c.directed).length < this.opts.cars; tries++) {
-      const road = this.world.roads[Math.floor(this.rnd() * this.world.roads.length)]
-      const seg = Math.floor(this.rnd() * (road.pts.length - 1))
-      const at = road.pts[seg]
+    if (this.t - this.spotsAt > 1) this.refreshSpots(player)
+    // Az indulásnál a környék már forgalmas (a vezető még nem nézett körül); később csak ott jelenik meg autó,
+    // ahol nem látszik: messze előttünk a ködben, oldalt a házak mögött, nem közvetlenül mögöttünk a tükörben
+    const opening = this.t < 0.5
+    for (let tries = 0; tries < (opening ? 60 : 4) && this.cars.filter((c) => !c.directed).length < this.opts.cars; tries++) {
+      const spot = this.pickSpot()
+      if (!spot) break
+      const { road, seg } = spot
       const dir: 1 | -1 = road.oneway !== 0 ? road.oneway : this.rnd() < 0.5 ? 1 : -1
       const from = dir === 1 ? road.nodes[seg] : road.nodes[seg + 1]
       const edge = (this.graph.out.get(from) ?? []).find((e) => e.road === road && e.seg === seg && e.dir === dir)
-      if (!edge || edge.len < 8 || !this.freeAt(at, 20)) continue
+      if (!edge || edge.len < 8) continue
       const edges = randomWalk(this.graph, edge, 250 + this.rnd() * 350, this.rnd)
       const path = buildPath(this.graph, edges, this.models)
-      // Az út közepén jelenik meg, nem kereszteződésben; a tényleges helyén mérve messze a vezetőtől és nem a szeme előtt
-      const s0 = Math.min(edge.len / 2, 12)
+      // A szakaszon bárhol (nem kereszteződésben); a tényleges helyén mérve
+      const s0 = Math.min(edge.len - 4, 4 + this.rnd() * (edge.len - 8))
       const p0 = pointAt(path.pts, path.cum, s0)
       const d = Math.hypot(p0[0] - player.x, p0[1] - player.z)
-      if (d < SPAWN_MIN || d > SPAWN_MAX) continue
-      if (((p0[0] - player.x) * pfx + (p0[1] - player.z) * pfz) / d > 0.5 && d < 160) continue
+      if (d > SPAWN_MAX || d < (opening ? 20 : SPAWN_MIN)) continue
+      const ahead = ((p0[0] - player.x) * pfx + (p0[1] - player.z) * pfz) / d
+      if (!opening && ((ahead > 0.5 && d < HIDDEN_AHEAD) || (ahead < -0.7 && d < HIDDEN_BEHIND))) continue
       if (this.index.junctionAt(p0, 4) || !this.freeAt(p0, 20)) continue
+      // A vezető saját sávjába ne (az indulásnál se) kerüljön közvetlenül elé vagy mögé
+      if (d < 40 && Math.abs((p0[0] - player.x) * Math.cos(player.heading) + (p0[1] - player.z) * Math.sin(player.heading)) < 3) continue
       this.cars.push(this.newCar(path, s0, false))
     }
     // Háttér-gyalogosok a járdán
@@ -440,7 +502,7 @@ export class TrafficSystem {
       const key = `${p.node}@${Math.round(p.s)}`
       if (d < 70 || d > 140 || this.directedNodes.has(key)) continue
       this.directedNodes.add(key)
-      if (this.rnd() > (this.opts.carChance ?? 0.5)) continue
+      if (this.rnd() > (this.opts.carChance ?? 0.7)) continue
       const m = this.models.get(p.node)!
       const arms = m.arms.filter((a) => a !== p.approach.arm && a.canApproach && a.road.length > 20)
       if (!arms.length) continue
@@ -551,7 +613,8 @@ function crossingsAlong(world: World, pts: XZ[], cum: number[]): Array<{ s: numb
   world.crossings.forEach((cr, index) => {
     for (let i = 0; i < pts.length - 1; i++) {
       const h = projectOnSegment(cr.at, pts[i], pts[i + 1])
-      if (h.dist > cr.halfWidth + 0.5) continue
+      // Az útvonal a zebra útjának középvonalán halad (nem egy mellette futó úton)
+      if (h.dist > Math.min(3, cr.halfWidth + 0.5)) continue
       const segH = Math.atan2(pts[i + 1][0] - pts[i][0], -(pts[i + 1][1] - pts[i][1]))
       if (Math.abs(Math.cos(wrapAngle(segH - cr.heading))) < 0.7) continue
       out.push({ s: cum[i] + h.t * (cum[i + 1] - cum[i]), index })
