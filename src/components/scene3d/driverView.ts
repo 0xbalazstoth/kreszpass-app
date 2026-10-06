@@ -3,6 +3,11 @@ import type { Look } from '../../domain/maneuvers/types'
 /** Merre fordítja a fejét a vezető (radián, + = jobbra a menetirányhoz képest) */
 export const LOOK_YAW: Record<Look, number> = {
   ahead: 0,
+  // Le, a váltóra vagy a műszerfalra (nem fordul, csak lenéz)
+  down: 0,
+  // Kereszteződésben oldalra, a keresztező út felé
+  left: -1.05,
+  right: 1.05,
   mirror_left: -0.6,
   mirror_right: 0.75,
   mirror_inner: 0,

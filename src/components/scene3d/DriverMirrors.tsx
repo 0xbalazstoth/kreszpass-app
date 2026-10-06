@@ -49,7 +49,7 @@ export function DriverAndMirrors({
       const [ex, ez] = carToWorld(pose, 1.45, -0.37)
       camera.position.set(ex, 1.22, ez)
       const [fx, fz] = forward(pose.heading + yaw.current)
-      camera.lookAt(ex + fx * 30, lookNow === 'mirror_inner' ? 1.6 : 1.05, ez + fz * 30)
+      camera.lookAt(ex + fx * 30, lookNow === 'mirror_inner' ? 1.6 : lookNow === 'down' ? -22 : 1.05, ez + fz * 30)
     }
 
     gl.setScissorTest(false)

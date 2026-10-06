@@ -29,7 +29,7 @@ export interface Site {
 }
 
 /** Merre néz a vezető a lépés alatt */
-export type Look = 'ahead' | 'mirror_left' | 'mirror_right' | 'mirror_inner' | 'shoulder_left' | 'shoulder_right' | 'back'
+export type Look = 'ahead' | 'down' | 'left' | 'right' | 'mirror_left' | 'mirror_right' | 'mirror_inner' | 'shoulder_left' | 'shoulder_right' | 'back'
 
 export interface ManeuverStep {
   title: string

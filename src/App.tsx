@@ -1,6 +1,8 @@
 import { DrivePage } from './features/drive/DrivePage'
 import { FreeDrivePage } from './features/drive/FreeDrivePage'
 import { ExamSheet } from './features/exam-sheet/ExamSheet'
+import { FaultPage } from './features/faults/FaultPage'
+import { FaultsPage } from './features/faults/FaultsPage'
 import { ManeuverPage } from './features/maneuvers/ManeuverPage'
 import { ManeuversPage } from './features/maneuvers/ManeuversPage'
 import { RouteEditor } from './features/routes/RouteEditor'
@@ -11,11 +13,12 @@ import { StatsPage } from './features/stats/StatsPage'
 import type { Mode } from './domain/types'
 import { href, useHashRoute } from './lib/router'
 
-const NAV = [
+const NAV: { path: string; label: string; short?: string; match: string[] }[] = [
   { path: '', label: 'Útvonalak', match: ['', 'route', 'drive', 'sim', 'sheet'] },
   { path: 'review', label: 'Ismétlés', match: ['review'] },
   { path: 'signs', label: 'Táblák', match: ['signs'] },
   { path: 'maneuvers', label: 'Manőverek', match: ['maneuvers'] },
+  { path: 'eval', label: 'Minősítő lap', short: 'Lap', match: ['eval'] },
   { path: 'stats', label: 'Statisztika', match: ['stats'] },
   { path: 'settings', label: 'Beállítások', match: ['settings'] },
 ]
@@ -23,7 +26,7 @@ const NAV = [
 export default function App() {
   const { parts, query } = useHashRoute()
   const [page = '', arg] = parts
-  const fullBleed = page === 'route' || page === 'drive' || page === 'sim' || page === 'review' || (page === 'maneuvers' && !!arg)
+  const fullBleed = page === 'route' || page === 'drive' || page === 'sim' || page === 'review' || ((page === 'maneuvers' || page === 'eval') && !!arg)
 
   let content
   switch (page) {
@@ -55,6 +58,9 @@ export default function App() {
     case 'maneuvers':
       content = arg ? <ManeuverPage key={arg} id={arg} /> : <ManeuversPage />
       break
+    case 'eval':
+      content = arg ? <FaultPage key={arg} slug={arg} /> : <FaultsPage />
+      break
     case 'stats':
       content = <StatsPage />
       break
@@ -78,8 +84,15 @@ export default function App() {
         </a>
         <nav>
           {NAV.map((n) => (
-            <a key={n.path} href={href(n.path)} className={n.match.includes(page) ? 'active' : ''}>
-              {n.label}
+            <a key={n.path} href={href(n.path)} className={n.match.includes(page) ? 'active' : ''} aria-label={n.short ? n.label : undefined}>
+              {n.short ? (
+                <>
+                  <span className="nav-long">{n.label}</span>
+                  <span className="nav-short">{n.short}</span>
+                </>
+              ) : (
+                n.label
+              )}
             </a>
           ))}
         </nav>

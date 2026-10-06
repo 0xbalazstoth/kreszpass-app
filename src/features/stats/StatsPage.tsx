@@ -1,5 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useMemo, useState } from 'react'
+import { CodeLink } from '../../components/CodeLink'
 import { MapView, type MapPin } from '../../components/MapView'
 import { EVAL_CODES } from '../../domain/evalCodes'
 import { signForSituation, SIGN_BY_CODE } from '../../data/signs'
@@ -125,7 +126,7 @@ export function StatsPage() {
                 <ul>
                   {topCodes(selAttempts).map(([c, n]) => (
                     <li key={c}>
-                      <code>{c}</code> ×{n} {EVAL_CODES[c]?.text}
+                      <CodeLink code={c} /> ×{n} {EVAL_CODES[c]?.text}
                     </li>
                   ))}
                 </ul>
@@ -155,7 +156,7 @@ export function StatsPage() {
                 {codeCounts.slice(0, 15).map(([c, n]) => (
                   <tr key={c} className={EVAL_CODES[c]?.fatal ? 'bad' : ''}>
                     <td>
-                      <code>{c}</code>
+                      <CodeLink code={c} />
                     </td>
                     <td className="num">{n}</td>
                     <td>{EVAL_CODES[c]?.text}</td>

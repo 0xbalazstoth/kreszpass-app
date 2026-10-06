@@ -7,6 +7,8 @@ import type { QualityProfile } from './quality'
 /** Az égbolt színe HDR nélkül, és a köd színe (a horizont árnyalata) */
 const SKY = '#bcd6ec'
 const HAZE = '#c9d7e3'
+/** Éjszakai égbolt és köd */
+const NIGHT = '#05070d'
 
 let sky: Promise<Texture | null> | null = null
 function loadSky(): Promise<Texture | null> {
@@ -25,14 +27,14 @@ function loadSky(): Promise<Texture | null> {
 }
 
 /** A megjelenítő és a jelenet beállítása a minőség szerint; visszaadja a leállító függvényt */
-function configure(gl: WebGLRenderer, scene: Scene, quality: QualityProfile): () => void {
+function configure(gl: WebGLRenderer, scene: Scene, quality: QualityProfile, night: boolean): () => void {
   gl.shadowMap.enabled = quality.shadows > 0
   gl.shadowMap.type = PCFShadowMap
-  gl.toneMappingExposure = quality.hdri ? 0.95 : 1
-  scene.fog = new Fog(HAZE, 70, 220)
-  scene.background = new Color(SKY)
+  gl.toneMappingExposure = quality.hdri && !night ? 0.95 : 1
+  scene.fog = night ? new Fog(NIGHT, 20, 140) : new Fog(HAZE, 70, 220)
+  scene.background = new Color(night ? NIGHT : SKY)
   let cancelled = false
-  if (quality.hdri) {
+  if (quality.hdri && !night) {
     void loadSky().then((t) => {
       if (cancelled || !t) return
       scene.environment = t
@@ -59,13 +61,25 @@ function fitShadow(light: DirectionalLight, radius: number) {
 /**
  * A jelenet „kinézete”: HDR égbolt (háttér, fények és tükröződések), nap árnyékkal, köd.
  * Alacsony minőségen a régi, egyszerű megvilágítás marad (égszínű háttér, félgömb-fény), árnyék nélkül.
- * `focus`: a nap árnyéktérképe e pont körül, `radius` sugarú területet fed le.
+ * `focus`: a nap árnyéktérképe e pont körül, `radius` sugarú területet fed le (függvényként képkockánként lekérdezve,
+ * ha a pont mozog).
  */
-export function SceneLook({ quality, focus = [0, 0, 15], radius = 45 }: { quality: QualityProfile; focus?: [number, number, number]; radius?: number }) {
+export function SceneLook({
+  quality,
+  focus = [0, 0, 15],
+  radius = 45,
+  night = false,
+}: {
+  quality: QualityProfile
+  focus?: [number, number, number] | (() => [number, number, number])
+  radius?: number
+  /** Éjszaka: sötét égbolt és köd, gyenge holdfény */
+  night?: boolean
+}) {
   const { gl, scene } = useThree()
   const sun = useRef<DirectionalLight>(null)
 
-  useEffect(() => configure(gl, scene, quality), [gl, scene, quality])
+  useEffect(() => configure(gl, scene, quality, night), [gl, scene, quality, night])
   // Az árnyék-kamera kiterjedése: a propokkal beállítva nem frissülne a vetítése (alapból csak ±5 m-t fedne le)
   useEffect(() => {
     if (sun.current) fitShadow(sun.current, radius)
@@ -75,18 +89,19 @@ export function SceneLook({ quality, focus = [0, 0, 15], radius = 45 }: { qualit
   useFrame(() => {
     const s = sun.current
     if (!s) return
-    s.position.set(focus[0] + 35, 60, focus[2] + 28)
-    s.target.position.set(focus[0], 0, focus[2])
+    const f = typeof focus === 'function' ? focus() : focus
+    s.position.set(f[0] + 35, 60, f[2] + 28)
+    s.target.position.set(f[0], 0, f[2])
     s.target.updateMatrixWorld()
   })
 
   return (
     <>
-      <hemisphereLight args={['#ffffff', '#6b7d5c', quality.hdri ? 0.35 : 1.15]} />
+      <hemisphereLight args={night ? ['#3b4a6b', '#0b0f18', 0.25] : ['#ffffff', '#6b7d5c', quality.hdri ? 0.35 : 1.15]} />
       <directionalLight
         ref={sun}
-        intensity={quality.hdri ? 2.2 : 1.5}
-        color="#fff4e2"
+        intensity={night ? 0.08 : quality.hdri ? 2.2 : 1.5}
+        color={night ? '#9fb3d9' : '#fff4e2'}
         castShadow={quality.shadows > 0}
         shadow-mapSize-width={quality.shadows || 512}
         shadow-mapSize-height={quality.shadows || 512}

@@ -1,4 +1,5 @@
 import { useLiveQuery } from 'dexie-react-hooks'
+import { CodeLink } from '../../components/CodeLink'
 import { EVAL_BLOCKS, EVAL_CODES, MAX_FAULT_LINES } from '../../domain/evalCodes'
 import { hazardDistance } from '../../domain/hazards'
 import { KIND_LABEL } from '../../domain/questions'
@@ -170,9 +171,7 @@ export function ExamSheet({ sessionId }: { sessionId: string }) {
                     <td>{formatSeconds(a.reactionMs)}</td>
                     <td>
                       {[...a.codes].sort(compareCodes).map((c) => (
-                        <code key={c} title={EVAL_CODES[c]?.text}>
-                          {c}
-                        </code>
+                        <CodeLink key={c} code={c} />
                       ))}
                     </td>
                   </tr>

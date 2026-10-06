@@ -1,11 +1,12 @@
 import { Component, lazy, Suspense, type ReactNode } from 'react'
 import type { Scene } from '../../domain/questions'
 import { SceneView } from '../SceneView'
-import { loadManeuverScene3D, loadScene3D } from './load'
+import { loadFaultScene3D, loadManeuverScene3D, loadScene3D } from './load'
 import { webglAvailable } from './webgl'
 
 const Scene3D = lazy(loadScene3D)
 export const ManeuverScene3D = lazy(loadManeuverScene3D)
+export const FaultScene3D = lazy(loadFaultScene3D)
 
 /** Ha a 3D nézet hibát dob (pl. elveszett WebGL-környezet), a megadott tartalék jelenik meg */
 export class Fallback extends Component<{ fallback: ReactNode; children: ReactNode }, { failed: boolean }> {
