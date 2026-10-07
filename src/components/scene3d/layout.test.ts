@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Scene } from '../../domain/questions'
-import { buildLayout, carPose, HALF, propPose, RING_INNER, RING_OUTER, ringLaneRadius } from './layout'
+import { buildLayout, carPose, HALF, KERB_Y, propPose, RING_INNER, RING_OUTER, ringLaneRadius, SIDEWALK_Y, surfaceY, type Rect } from './layout'
 
 const junction = (extra: Partial<Scene>): Scene => ({ layout: 'junction', turn: 'straight', cars: [], ...extra })
 
@@ -360,5 +360,22 @@ describe('3D elrendezés – utcabútorok', () => {
   it('sűrűbb beállításnál több utcabútor', () => {
     const sparse = buildLayout({ layout: 'road', turn: 'straight', cars: [], roadSign: 'C-033-30' }, 30).furniture!.length
     expect(street.furniture!.length).toBeGreaterThan(sparse)
+  })
+})
+
+describe('3D elrendezés – a gyalogos talaja', () => {
+  // Az úttest keleti oldalán, észak–déli járda: a szegélykő a nyugati (úttest felőli) szélén
+  const walk: Rect = { x: HALF + 1.25, z: 0, w: 2.5, d: 40 }
+
+  it('a járdán annak tetején, a szegélykövön kicsit feljebb, az úttesten a talajon áll', () => {
+    expect(surfaceY([walk], HALF + 1.5, 0)).toBe(SIDEWALK_Y)
+    expect(surfaceY([walk], HALF + 0.02, 0)).toBe(KERB_Y)
+    expect(surfaceY([walk], HALF - 1, 0)).toBe(0)
+  })
+
+  it('a ferde járdát a saját irányában méri', () => {
+    const slanted: Rect = { x: 0, z: 0, w: 10, d: 1, rotY: Math.PI / 2 }
+    expect(surfaceY([slanted], 0, 4)).toBe(SIDEWALK_Y)
+    expect(surfaceY([slanted], 4, 0.2)).toBe(0)
   })
 })

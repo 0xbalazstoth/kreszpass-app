@@ -9,7 +9,7 @@ import { Person } from './people'
 import { carKindFor, groundPlane, roadPaint, scaleUv, surface, TILE_M, windowGlass, worldBox, type SurfaceName } from './materials'
 import { useQuality } from './quality'
 import { Car } from './vehicles'
-import { carPose, easeOut, type Building, type Car3D, type Layout3D, type Light3D, type Ped3D, type Rail3D, type Rect, type SignPost3D } from './layout'
+import { carPose, easeOut, kerbOf, KERB_Y, SIDEWALK_Y, stepY, surfaceY, type Building, type Car3D, type Layout3D, type Light3D, type Ped3D, type Rail3D, type Rect, type SignPost3D } from './layout'
 
 /** A közeledés 0..1 állása és az eltelt idő a kérdés megjelenése óta */
 export interface Clock {
@@ -21,16 +21,6 @@ export interface Clock {
 
 
 // ---------------------------------------------------------------- talaj, utak
-
-/** A járdák úttest felőli szegélye (a beton szegélykő a járda és az úttest között) */
-function kerbOf(r: Rect): Rect {
-  if (r.w >= r.d) {
-    const z = r.z - Math.sign(r.z || 1) * (r.d / 2)
-    return { x: r.x, z, w: r.w, d: 0.18 }
-  }
-  const x = r.x - Math.sign(r.x || 1) * (r.w / 2)
-  return { x, z: r.z, w: 0.18, d: r.d }
-}
 
 function FlatSurface({ r, y, name, normalMaps }: { r: Rect; y: number; name: SurfaceName; normalMaps: boolean }) {
   const geo = useMemo(() => groundPlane(r.w, r.d, TILE_M[name]), [r.w, r.d, name])
@@ -79,8 +69,8 @@ export function Ground({ layout }: { layout: Pick<Layout3D, 'asphalt' | 'sidewal
       )}
       {layout.sidewalks.map((r, i) => (
         <group key={`s${i}`}>
-          <RaisedSurface r={r} h={0.15} name="pavement" normalMaps={nm} />
-          <RaisedSurface r={kerbOf(r)} h={0.17} name="kerb" normalMaps={nm} />
+          <RaisedSurface r={r} h={SIDEWALK_Y} name="pavement" normalMaps={nm} />
+          <RaisedSurface r={kerbOf(r)} h={KERB_Y} name="kerb" normalMaps={nm} />
         </group>
       ))}
       {layout.markings.map((r, i) => (
@@ -115,7 +105,8 @@ function facadeOf(b: Building): FacadeKind {
 const roofMat = new MeshStandardMaterial({ color: '#5b5f66', roughness: 0.95 })
 const corniceMat = new MeshStandardMaterial({ color: '#e7e2d8', roughness: 0.8 })
 const frameMat = new MeshStandardMaterial({ color: '#f1efe9', roughness: 0.6 })
-const shopMat = new MeshStandardMaterial({ color: '#2b2f35', roughness: 0.4, metalness: 0.3 })
+// A kirakat a lábazat elé lóg: a mélységeltolás távolról is megóvja a z-harctól
+const shopMat = new MeshStandardMaterial({ color: '#2b2f35', roughness: 0.4, metalness: 0.3, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 })
 
 function BuildingBox({ b, normalMaps }: { b: Building; normalMaps: boolean }) {
   const f = facadeOf(b)
@@ -188,7 +179,8 @@ function Windows({ list }: { list: Building[] }) {
         mesh.setMatrixAt(i, o.matrix)
       }
       if (it.shop) {
-        place(shops.current, is, 0.03, 0, 1, 1)
+        // A lábazat síkja 0,03-nál van: a kirakat elé kerül, nem bele
+        place(shops.current, is, 0.06, 0, 1, 1)
         is++
       } else {
         place(frames.current, iw, 0.02)
@@ -683,7 +675,7 @@ export function HumanFigure({ look, limbs }: { look: (typeof PED_LOOKS)[number];
   )
 }
 
-export function Pedestrian({ ped, clock, index }: { ped: Ped3D; clock: Clock; index: number }) {
+export function Pedestrian({ ped, clock, index, sidewalks }: { ped: Ped3D; clock: Clock; index: number; sidewalks: Rect[] }) {
   const ref = useRef<Group>(null)
   const legL = useRef<Group>(null)
   const legR = useRef<Group>(null)
@@ -692,6 +684,7 @@ export function Pedestrian({ ped, clock, index }: { ped: Ped3D; clock: Clock; in
   /** A pillanatnyi haladási sebesség (m/s): ehhez igazodik a valósághű modell lépése */
   const speed = useRef(0)
   const last = useRef<[number, number] | null>(null)
+  const footY = useRef(surfaceY(sidewalks, ped.from[0], ped.from[1]))
   const look = PED_LOOKS[index % PED_LOOKS.length]
   useFrame(({ clock: c }, dt) => {
     if (!ref.current) return
@@ -709,14 +702,15 @@ export function Pedestrian({ ped, clock, index }: { ped: Ped3D; clock: Clock; in
     // Az egyszerű (tartalék) alak lépése: lépésenként kétszer emelkedik a test
     const swing = walking ? Math.sin(t * 6.5) : Math.sin(t * 1.3) * 0.04
     const bob = walking ? Math.abs(Math.cos(t * 6.5)) * 0.035 : 0
-    ref.current.position.set(x, (legL.current ? bob : 0) + (ped.state === 'waiting' ? 0.15 : 0), z)
+    footY.current = stepY(footY.current, surfaceY(sidewalks, x, z), dt)
+    ref.current.position.set(x, footY.current + (legL.current ? bob : 0), z)
     if (legL.current) legL.current.rotation.x = swing * 0.5
     if (legR.current) legR.current.rotation.x = -swing * 0.5
     if (armL.current) armL.current.rotation.x = -swing * 0.45
     if (armR.current) armR.current.rotation.x = swing * 0.45
   })
   return (
-    <group ref={ref} position={[ped.from[0], 0, ped.from[1]]} rotation={[0, ped.rotY, 0]}>
+    <group ref={ref} position={[ped.from[0], footY.current, ped.from[1]]} rotation={[0, ped.rotY, 0]}>
       <Person
         name={PERSON_MODELS[index % PERSON_MODELS.length]}
         height={1.66 + (index % 3) * 0.06}

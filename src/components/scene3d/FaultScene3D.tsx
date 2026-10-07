@@ -9,7 +9,7 @@ import type { Look } from '../../domain/maneuvers/types'
 import { AutoShadows } from './AutoShadows'
 import { DriverAndMirrors } from './DriverMirrors'
 import { CENTER_F, LOOK_YAW, MIRRORS, OWN_CAR_LAYER } from './driverView'
-import type { Rect } from './layout'
+import { stepY, surfaceY, type Rect } from './layout'
 import { PED_LOOKS } from './looks'
 import { PERSON_MODELS } from './models'
 import { Buildings, CarModel, Ground, HumanFigure, RailBarrier, RailLights, RailTrack, SignPost, Van, type Clock } from './parts'
@@ -32,13 +32,14 @@ const STILL: Clock = { progress: () => 0, sinceStop: () => 0, elapsed: () => 0 }
 const blinkOf = (b: Blink): 'left' | 'right' | undefined => (b === 'left' || b === 'right' ? b : b === 'hazard' ? 'left' : undefined)
 
 /** A szereplő a lecke szerint mozog; az irányjelzője csak váltáskor rajzolódik újra */
-function ActorView({ a, index, frameNow, night }: { a: Actor; index: number; frameNow: () => Frame; night: boolean }) {
+function ActorView({ a, index, frameNow, night, sidewalks }: { a: Actor; index: number; frameNow: () => Frame; night: boolean; sidewalks: Rect[] }) {
   const ref = useRef<Group>(null)
   const [blink, setBlink] = useState<Blink>('off')
   const isCar = a.kind === 'own' || a.kind === 'car'
   // Gyalogos: a lépés a haladási sebességhez igazodik
   const speed = useRef(0)
   const last = useRef<[number, number] | null>(null)
+  const footY = useRef<number | null>(null)
   const legL = useRef<Group>(null)
   const legR = useRef<Group>(null)
   const armL = useRef<Group>(null)
@@ -47,7 +48,13 @@ function ActorView({ a, index, frameNow, night }: { a: Actor; index: number; fra
     const f = frameNow().actors[a.id]
     if (!f || !ref.current) return
     const [x, z] = isCar ? carToWorld(f.pose, CENTER_F, 0) : [f.pose.x, f.pose.z]
-    ref.current.position.set(x, 0, z)
+    // A gyalogos a járdán annak tetején áll, nem belesüllyedve
+    let y = 0
+    if (a.kind === 'ped') {
+      const ground = surfaceY(sidewalks, x, z)
+      y = footY.current = footY.current === null ? ground : stepY(footY.current, ground, dt)
+    }
+    ref.current.position.set(x, y, z)
     ref.current.rotation.set(0, -f.pose.heading, 0)
     // A saját autó a vezető szeméből rejtett rétegen (a tükrökben látszik); a fényszóró fénye maradjon a közös rétegen
     if (a.kind === 'own') ref.current.traverse((o) => !(o as Light).isLight && o.layers.set(OWN_CAR_LAYER))
@@ -255,7 +262,7 @@ export default function FaultScene3D({ lesson, frameNow, chase }: FaultView) {
           <Puddle key={i} r={r as Rect} />
         ))}
         {lesson.actors.map((a, i) => (
-          <ActorView key={a.id} a={a} index={i} frameNow={frameNow} night={!!world.night} />
+          <ActorView key={a.id} a={a} index={i} frameNow={frameNow} night={!!world.night} sidewalks={ground.sidewalks} />
         ))}
         <DriverAndMirrors poseNow={poseNow} look={() => frameNow().look} mirrorsOn={!lookingBack} chase={chase} />
       </Canvas>

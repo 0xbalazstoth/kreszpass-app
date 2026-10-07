@@ -74,10 +74,10 @@ export default function Scene3D({ scene, animate, approachMs }: Props) {
           return <PartnerCar key={i} car={c} clock={clock} blink={intent === 'left' || intent === 'right' ? intent : undefined} />
         })}
         {layout.peds.map((p, i) => (
-          <Pedestrian key={i} ped={p} clock={clock} index={i} />
+          <Pedestrian key={i} ped={p} clock={clock} index={i} sidewalks={layout.sidewalks} />
         ))}
         {layout.blocker && <Van x={layout.blocker.x} z={layout.blocker.z} />}
-        {layout.props && <Props list={layout.props} clock={clock} />}
+        {layout.props && <Props list={layout.props} clock={clock} sidewalks={layout.sidewalks} />}
         {layout.furniture && <StreetFurniture list={layout.furniture} />}
         <AutoShadows enabled={quality.shadows > 0} />
         <DriverCamera layout={layout} clock={clock} />

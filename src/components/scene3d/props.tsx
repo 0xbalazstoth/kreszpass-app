@@ -1,7 +1,7 @@
 import { useFrame, useThree } from '@react-three/fiber'
 import { useRef } from 'react'
 import { PerspectiveCamera, Vector3, type Group, type Mesh, type MeshBasicMaterial } from 'three'
-import { easeOut, propPose, type Prop3D } from './layout'
+import { easeOut, propPose, stepY, surfaceY, type Prop3D, type Rect } from './layout'
 import { Model } from './Furniture'
 import { PED_LOOKS } from './looks'
 import { Person } from './people'
@@ -13,25 +13,29 @@ import { CarModel, HumanFigure, Van, type Clock } from './parts'
  * Táblát itt nem rajzolunk: a táblák mindig a valódi képek (SignPost).
  */
 
-export function Props({ list, clock }: { list: Prop3D[]; clock: Clock }) {
+export function Props({ list, clock, sidewalks = [] }: { list: Prop3D[]; clock: Clock; sidewalks?: Rect[] }) {
   return (
     <group>
       {list.map((p, i) => (
-        <PropView key={i} prop={p} clock={clock} />
+        <PropView key={i} prop={p} clock={clock} sidewalks={sidewalks} />
       ))}
     </group>
   )
 }
 
-function PropView({ prop, clock }: { prop: Prop3D; clock: Clock }) {
+function PropView({ prop, clock, sidewalks }: { prop: Prop3D; clock: Clock; sidewalks: Rect[] }) {
   const ref = useRef<Group>(null)
-  useFrame(() => {
+  // A gyalogosok a járdán annak tetején állnak, az úttesten a talajon
+  const walker = prop.kind === 'child' || prop.kind === 'worker'
+  const footY = useRef(walker ? surfaceY(sidewalks, prop.at[0], prop.at[1]) : 0)
+  useFrame((_, dt) => {
     if (!ref.current || !prop.move) return
     const [x, z] = propPose(prop, clock.progress(), clock.elapsed(), clock.sinceStop())
-    ref.current.position.set(x, 0, z)
+    if (walker) footY.current = stepY(footY.current, surfaceY(sidewalks, x, z), dt)
+    ref.current.position.set(x, footY.current, z)
   })
   return (
-    <group ref={ref} position={[prop.at[0], 0, prop.at[1]]} rotation={[0, prop.rotY, 0]}>
+    <group ref={ref} position={[prop.at[0], footY.current, prop.at[1]]} rotation={[0, prop.rotY, 0]}>
       <PropModel prop={prop} clock={clock} />
     </group>
   )

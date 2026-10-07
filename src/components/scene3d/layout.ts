@@ -840,6 +840,43 @@ export function buildLayout(scene: Scene, furnitureSpacing = 18): Layout3D {
 }
 
 /** Közeledés: lassuló mozgás (ease-out), 0..1 */
+/** A járda és a szegélykő teteje (m) */
+export const SIDEWALK_Y = 0.15
+export const KERB_Y = 0.17
+
+/** A járdák úttest felőli szegélye (a beton szegélykő a járda és az úttest között) */
+export function kerbOf(r: Rect): Rect {
+  if (r.w >= r.d) {
+    const z = r.z - Math.sign(r.z || 1) * (r.d / 2)
+    return { x: r.x, z, w: r.w, d: 0.18 }
+  }
+  const x = r.x - Math.sign(r.x || 1) * (r.w / 2)
+  return { x, z: r.z, w: 0.18, d: r.d }
+}
+
+function inRect(r: Rect, x: number, z: number): boolean {
+  const dx = x - r.x
+  const dz = z - r.z
+  const c = Math.cos(r.rotY ?? 0)
+  const s = Math.sin(r.rotY ?? 0)
+  return Math.abs(dx * c - dz * s) <= r.w / 2 && Math.abs(dx * s + dz * c) <= r.d / 2
+}
+
+/** A talaj magassága az (x, z) pontban: a szegélykövön, a járdán vagy az úttesten (0) áll-e a gyalogos */
+export function surfaceY(sidewalks: Rect[], x: number, z: number): number {
+  let y = 0
+  for (const r of sidewalks) {
+    if (inRect(kerbOf(r), x, z)) return KERB_Y
+    if (inRect(r, x, z)) y = SIDEWALK_Y
+  }
+  return y
+}
+
+/** A gyalogos magassága a talaj felé simítva: a szegélyre fel- és lelépés ne ugrás legyen */
+export function stepY(current: number, target: number, dt: number): number {
+  return current + (target - current) * Math.min(1, dt * 14)
+}
+
 export function easeOut(t: number): number {
   const c = Math.min(1, Math.max(0, t))
   return 1 - Math.pow(1 - c, 3)
