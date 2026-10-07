@@ -1,6 +1,6 @@
 import type { Pose, Segment } from '../maneuvers/geometry'
 import type { Look, SiteRect } from '../maneuvers/types'
-import type { LightState } from '../questions'
+import type { LightState, RailLight } from '../questions'
 
 /**
  * A minősítő lap hibakódjainak bemutatói: minden kódhoz egy rövid jelenet, amely lépésenként lejátszható.
@@ -17,7 +17,7 @@ export type Key<T> = [number, T]
 /** Kulcskockák időrendben; számnál lineáris az átmenet, minden másnál lépcsős */
 export type Track<T> = Key<T>[]
 
-export type ActorKind = 'own' | 'car' | 'bus' | 'bike' | 'ped' | 'ambulance'
+export type ActorKind = 'own' | 'car' | 'bus' | 'bike' | 'ped' | 'ambulance' | 'tram' | 'train'
 export type Blink = 'off' | 'left' | 'right' | 'hazard'
 
 export interface Actor {
@@ -69,7 +69,11 @@ export type Mark =
   /** Felirat a helyszínen */
   | { kind: 'label'; at: [number, number]; text: string; bad?: boolean }
 
-export type Phase = 'setup' | 'wrong' | 'right'
+/**
+ * A lépés szerepe: a hibakód-leckékben helyzet → hibás → helyes (a hibás és a helyes ág a helyzet végéről indul);
+ * a forgalmi helyzetek bemutatóiban `step`: egyszerűen az előzőre épülő lépés.
+ */
+export type Phase = 'setup' | 'wrong' | 'right' | 'step'
 
 export interface FaultStep {
   phase: Phase
@@ -87,6 +91,11 @@ export interface FaultStep {
   blinks?: Record<string, Track<Blink>>
   look?: Track<Look>
   marks?: Mark[]
+  /** A vasúti átjáró fényjelzője és a félsorompó (lezárva = true) */
+  rail?: Track<RailLight>
+  barrier?: Track<boolean>
+  /** Gyakori hibák ennél a lépésnél, a minősítő lap kódjával */
+  mistakes?: { code: string; text: string }[]
 }
 
 export interface WorldLight {
@@ -95,6 +104,8 @@ export interface WorldLight {
   z: number
   /** Merre néz a lámpa (a felé haladók látják): 0 = dél felé (felénk, ahogy északra haladunk) */
   facing: number
+  /** Jobbra mutató zöld kiegészítő nyíl: a jelzését ezen az azonosítón adjuk meg ('green' = ég, minden más = nem ég) */
+  arrow?: string
 }
 
 export interface WorldSign {
@@ -125,18 +136,28 @@ export interface World {
   buildings?: WorldBuilding[]
   /** A helyszín kiterjedése a felülnézeten: [nyugat, észak, kelet, dél] */
   bounds: [number, number, number, number]
+  /** Körforgalom körpályája (a középpont az origó) */
+  ring?: { inner: number; outer: number }
+  /** Vasúti átjáró: a sínpár középvonala (z), a fényjelző helye, és van-e félsorompó (a mi sávunk előtt) */
+  rail?: { z: number; lightAt?: { x: number; z: number }; barrier?: { x: number; z: number; length: number } }
+  /** Álló tárgyak: villamossínek (z irányban), járdasziget */
+  extras?: { kind: 'tram_track' | 'island'; x: number; z: number; w: number; d: number; rotY?: number }[]
   /** Éjszaka (a felülnézet sötét, a fényszóró fénykévéje látszik) */
   night?: boolean
   /** Követő nézet: a felülnézet ekkora ablakban (szélesség, magasság m) a saját autót követi */
   view?: [number, number]
 }
 
-export interface FaultLesson {
-  code: string
-  /** Rövid cím (a lap szövege az EVAL_CODES-ban) */
+/** Egy lejátszható jelenet: helyszín, szereplők, lépések */
+export interface Lesson {
   title: string
   summary: string
   world: World
   actors: Actor[]
   steps: FaultStep[]
+}
+
+export interface FaultLesson extends Lesson {
+  /** A minősítő lap kódja (a lap szövege az EVAL_CODES-ban) */
+  code: string
 }

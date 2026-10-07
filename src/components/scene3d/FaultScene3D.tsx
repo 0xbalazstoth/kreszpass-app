@@ -2,7 +2,8 @@ import { Canvas, useFrame } from '@react-three/fiber'
 import { useMemo, useRef, useState } from 'react'
 import type { Group, Light, MeshBasicMaterial, Object3D, SpotLight } from 'three'
 import type { Frame } from '../../domain/faults/timeline'
-import type { Actor, Blink, FaultLesson, WorldLight } from '../../domain/faults/types'
+import type { RailLight } from '../../domain/questions'
+import type { Actor, Blink, Lesson, WorldLight } from '../../domain/faults/types'
 import { carToWorld } from '../../domain/maneuvers/geometry'
 import type { Look } from '../../domain/maneuvers/types'
 import { AutoShadows } from './AutoShadows'
@@ -11,14 +12,14 @@ import { CENTER_F, LOOK_YAW, MIRRORS, OWN_CAR_LAYER } from './driverView'
 import type { Rect } from './layout'
 import { PED_LOOKS } from './looks'
 import { PERSON_MODELS } from './models'
-import { Buildings, CarModel, Ground, HumanFigure, SignPost, Van, type Clock } from './parts'
+import { Buildings, CarModel, Ground, HumanFigure, RailBarrier, RailLights, RailTrack, SignPost, Van, type Clock } from './parts'
 import { Person } from './people'
 import { Props } from './props'
 import { useQuality, type QualityProfile } from './quality'
 import { SceneLook } from './SceneLook'
 
 export interface FaultView {
-  lesson: FaultLesson
+  lesson: Lesson
   /** A jelenet most (minden képkockánál lekérdezve) */
   frameNow: () => Frame
   /** Kívülről, a kocsi mögül (a saját autó is látszik) */
@@ -76,6 +77,13 @@ function ActorView({ a, index, frameNow, night }: { a: Actor; index: number; fra
     case 'ambulance':
       body = <Van x={0} z={0} ambulance />
       break
+    case 'train':
+      // A modell origója a mozdony közepén van: a szerelvény közepe legyen a szereplő helye
+      body = <Props list={[{ kind: 'train', at: [0, -19.75], rotY: 0 }]} clock={STILL} />
+      break
+    case 'tram':
+      body = <Props list={[{ kind: 'tram', at: [0, 0], rotY: 0, size: [2.4, 27] }]} clock={STILL} />
+      break
     case 'ped':
       body = (
         <Person
@@ -122,7 +130,9 @@ function LiveLight({ light, frameNow }: { light: WorldLight; frameNow: () => Fra
   const red = useRef<MeshBasicMaterial>(null)
   const yellow = useRef<MeshBasicMaterial>(null)
   const green = useRef<MeshBasicMaterial>(null)
+  const arrow = useRef<MeshBasicMaterial>(null)
   useFrame(({ clock }) => {
+    if (light.arrow) arrow.current?.color.set(frameNow().signals[light.arrow] === 'green' ? '#22c55e' : '#262626')
     const s = frameNow().signals[light.id] ?? 'red'
     const flashOn = Math.floor(clock.elapsedTime * 1.6) % 2 === 0
     red.current?.color.set(s === 'red' || s === 'red_yellow' ? '#ef4444' : '#262626')
@@ -151,6 +161,19 @@ function LiveLight({ light, frameNow }: { light: WorldLight; frameNow: () => Fra
         {lamp(0, yellow)}
         {lamp(-0.3, green)}
       </group>
+      {light.arrow && (
+        // Kiegészítő lámpa a fő lámpa mellett, jobbra mutató nyíllal
+        <group position={[0.38, height + 0.15, 0]}>
+          <mesh>
+            <boxGeometry args={[0.3, 0.32, 0.26]} />
+            <meshStandardMaterial color="#111827" />
+          </mesh>
+          <mesh position={[0, 0, 0.14]} rotation={[0, 0, -Math.PI / 2]}>
+            <circleGeometry args={[0.1, 3]} />
+            <meshBasicMaterial ref={arrow} color="#262626" toneMapped={false} />
+          </mesh>
+        </group>
+      )}
     </group>
   )
 }
@@ -166,6 +189,23 @@ function Follow({ frameNow, ownId, look, onLook, quality, night }: { frameNow: (
     return [p.x, 0, p.z - 10]
   }
   return <SceneLook quality={quality} focus={focus} radius={40} night={night} />
+}
+
+/** Vasúti átjáró: sínek, fénysorompó és félsorompó; a jelzés és a sorompó a lecke szerint vált */
+function LiveRail({ rail, frameNow }: { rail: NonNullable<Lesson['world']['rail']>; frameNow: () => Frame }) {
+  const [state, setState] = useState<{ light: RailLight; down: boolean }>(() => ({ light: frameNow().rail, down: frameNow().barrier }))
+  useFrame(() => {
+    const f = frameNow()
+    if (f.rail !== state.light || f.barrier !== state.down) setState({ light: f.rail, down: f.barrier })
+  })
+  const r3 = { z: rail.z, light: state.light, lightAt: rail.lightAt, barrier: rail.barrier ? { ...rail.barrier, down: state.down } : undefined }
+  return (
+    <>
+      <RailTrack rail={r3} />
+      <RailLights rail={r3} />
+      <RailBarrier rail={r3} />
+    </>
+  )
 }
 
 /** Tócsa: sötét, fényes folt az úttesten */
@@ -186,7 +226,7 @@ export default function FaultScene3D({ lesson, frameNow, chase }: FaultView) {
   const quality = useQuality()
   const { world } = lesson
   const own = lesson.actors.find((a) => a.kind === 'own')
-  const ground = useMemo(() => ({ asphalt: world.asphalt as Rect[], sidewalks: world.sidewalks as Rect[], markings: world.markings as Rect[] }), [world])
+  const ground = useMemo(() => ({ asphalt: world.asphalt as Rect[], sidewalks: world.sidewalks as Rect[], markings: world.markings as Rect[], ring: world.ring }), [world])
   const signs = useMemo(() => (world.signs ?? []).map((s) => ({ codes: [s.code], x: s.x, z: s.z, rotY: s.facing, size: 0.9 })), [world])
   const [look, setLook] = useState(frameNow().look)
   const lookingBack = !chase && Math.abs(LOOK_YAW[look]) > 1.5
@@ -204,6 +244,13 @@ export default function FaultScene3D({ lesson, frameNow, chase }: FaultView) {
         {(world.lights ?? []).map((l, i) => (
           <LiveLight key={i} light={l} frameNow={frameNow} />
         ))}
+        {world.rail && <LiveRail rail={world.rail} frameNow={frameNow} />}
+        {(world.extras ?? []).length > 0 && (
+          <Props
+            list={(world.extras ?? []).map((x) => ({ kind: x.kind, at: [x.x, x.z] as [number, number], rotY: x.rotY ?? 0, size: [x.w, x.d] as [number, number] }))}
+            clock={STILL}
+          />
+        )}
         {(world.puddles ?? []).map((r, i) => (
           <Puddle key={i} r={r as Rect} />
         ))}

@@ -1,4 +1,4 @@
-import { deg, pathLength, type Gear, type Segment } from '../maneuvers/geometry'
+import { deg, pathLength, segmentLength, type Gear, type Segment } from '../maneuvers/geometry'
 import type { GearPos, Move, Track } from './types'
 
 /**
@@ -170,4 +170,91 @@ export const sum = (...xs: number[]) => xs.reduce((a, b) => a + b, 0)
 export function tAtDist(k: Kin, d: number, stepMs = k.ms): number {
   const hit = k.samples.find(([, s]) => s >= d - 1e-9)
   return Math.min(1, (hit ? hit[0] : k.ms) / stepMs)
+}
+
+/** Az út a..b méter közötti szelete (az egyenest hosszban, az ívet szögben vágva) */
+export function slicePath(path: Segment[], a: number, b: number): Segment[] {
+  const out: Segment[] = []
+  let pos = 0
+  for (const s of path) {
+    const len = segmentLength(s)
+    const from = Math.max(a, pos)
+    const to = Math.min(b, pos + len)
+    if (to > from + 1e-9) {
+      const part = to - from
+      out.push(s.kind === 'straight' ? { ...s, dist: part } : { ...s, angle: part / s.radius })
+    }
+    pos += len
+  }
+  return out
+}
+
+/** A kinematika szerint a t ms-ig megtett út (m) */
+function distAt(k: Kin, t: number): number {
+  const s = k.samples
+  if (t <= 0) return 0
+  for (let i = 1; i < s.length; i++) {
+    if (s[i][0] >= t) {
+      const f = (t - s[i - 1][0]) / Math.max(1e-9, s[i][0] - s[i - 1][0])
+      return s[i - 1][1] + (s[i][1] - s[i - 1][1]) * f
+    }
+  }
+  return k.dist
+}
+
+/**
+ * Egyetlen, több lépésen át tartó mozgás (pl. a körben haladó partner) lépésekre bontva: lépésenként az út
+ * megfelelő szelete, és rajta a mozgás profilja. `stepMs`: az egymást követő lépések hossza.
+ */
+export function driveSeq(k: Kin, path: Segment[], stepMs: number[]): Move[] {
+  const moves: Move[] = []
+  let t0 = 0
+  for (const ms of stepMs) {
+    const t1 = t0 + ms
+    const d0 = distAt(k, t0)
+    const d1 = distAt(k, t1)
+    const sub = slicePath(path, d0, d1)
+    const span = d1 - d0
+    const pts: [number, number][] = [[0, 0]]
+    for (const [t, d] of k.samples) if (t > t0 && t < t1) pts.push([(t - t0) / ms, span > 0 ? (d - d0) / span : 0])
+    pts.push([1, span > 0 ? 1 : 0])
+    moves.push(sub.length ? { path: sub, profile: pts } : { path: [] })
+    t0 = t1
+  }
+  return moves
+}
+
+/** A `driveSeq` párja: lépésenként a sebességmérő sávja (km/h) */
+export function speedSeq(k: Kin, stepMs: number[]): Track<number>[] {
+  const out: Track<number>[] = []
+  let t0 = 0
+  const vAt = (t: number) => {
+    const s = k.samples
+    if (t <= 0) return s[0][2]
+    for (let i = 1; i < s.length; i++) {
+      if (s[i][0] >= t) {
+        const f = (t - s[i - 1][0]) / Math.max(1e-9, s[i][0] - s[i - 1][0])
+        return s[i - 1][2] + (s[i][2] - s[i - 1][2]) * f
+      }
+    }
+    return s[s.length - 1][2]
+  }
+  for (const ms of stepMs) {
+    const t1 = t0 + ms
+    const tr: Track<number> = [[0, Math.round(vAt(t0) * 10) / 10]]
+    for (const [t, , v] of k.samples) if (t > t0 && t < t1) tr.push([(t - t0) / ms, Math.round(v * 10) / 10])
+    tr.push([1, Math.round(vAt(t1) * 10) / 10])
+    out.push(tr)
+    t0 = t1
+  }
+  return out
+}
+
+/**
+ * Egy folyamatos mozgás lépésekre bontva a kinematika részeinek határainál: `partEnds` az egyes lépéseket lezáró
+ * rész sorszáma (a `kin` részei közül). Visszaadja a lépések hosszát, a mozgásokat és a sebességmérő sávjait.
+ */
+export function split(k: Kin, path: Segment[], partEnds: number[]): { ms: number[]; moves: Move[]; speeds: Track<number>[] } {
+  const ms = partEnds.map((p, j) => k.ends[p] - (j ? k.ends[partEnds[j - 1]] : 0))
+  return { ms, moves: driveSeq(k, path, ms), speeds: speedSeq(k, ms) }
 }

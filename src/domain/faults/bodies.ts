@@ -7,6 +7,8 @@ export const BODY_SIZE: Record<Exclude<ActorKind, 'own' | 'car'>, [number, numbe
   ambulance: [2.1, 5.6],
   bike: [0.6, 1.8],
   ped: [0.55, 0.45],
+  tram: [2.4, 27],
+  train: [2.9, 57],
 }
 
 /** A szereplő körvonala (négy sarok) a világban */

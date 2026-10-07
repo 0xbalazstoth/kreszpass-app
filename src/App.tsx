@@ -5,6 +5,8 @@ import { FaultPage } from './features/faults/FaultPage'
 import { FaultsPage } from './features/faults/FaultsPage'
 import { ManeuverPage } from './features/maneuvers/ManeuverPage'
 import { ManeuversPage } from './features/maneuvers/ManeuversPage'
+import { SituationPage } from './features/maneuvers/SituationPage'
+import { maneuverById } from './domain/maneuvers'
 import { RouteEditor } from './features/routes/RouteEditor'
 import { RoutesPage } from './features/routes/RoutesPage'
 import { SettingsPage } from './features/settings/SettingsPage'
@@ -56,7 +58,7 @@ export default function App() {
       content = <SignDrillPage />
       break
     case 'maneuvers':
-      content = arg ? <ManeuverPage key={arg} id={arg} /> : <ManeuversPage />
+      content = arg ? maneuverById(arg) ? <ManeuverPage key={arg} id={arg} /> : <SituationPage key={arg} id={arg} /> : <ManeuversPage />
       break
     case 'eval':
       content = arg ? <FaultPage key={arg} slug={arg} /> : <FaultsPage />

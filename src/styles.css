@@ -1665,7 +1665,8 @@ a.fault-item:hover {
 .scene3d ~ .phase-banner {
   top: calc(17% + 8px);
 }
-.phase-banner.setup {
+.phase-banner.setup,
+.phase-banner.step {
   background: rgb(29 78 216 / 88%);
 }
 .phase-banner.wrong {
@@ -1703,7 +1704,8 @@ a.fault-item:hover {
   font-weight: 700;
   color: #fff;
 }
-.phase-chip.setup {
+.phase-chip.setup,
+.phase-chip.step {
   background: #1d4ed8;
 }
 .phase-chip.wrong {
@@ -2220,4 +2222,10 @@ a.code-link code {
     color: inherit;
     text-decoration: none;
   }
+}
+
+/* A Manőverek fülön a forgalmi helyzetek csoportjai */
+.situation-group h2 {
+  font-size: 1.1rem;
+  margin: 8px 0 10px;
 }

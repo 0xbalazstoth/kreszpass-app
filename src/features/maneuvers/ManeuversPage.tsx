@@ -1,6 +1,8 @@
 import { MANEUVERS } from '../../domain/maneuvers'
+import { GROUP_TITLE, GROUPS, SITUATIONS } from '../../domain/situations'
 import { href } from '../../lib/router'
 import { ManeuverDiagram } from './ManeuverDiagram'
+import { SituationCard } from './SituationCard'
 
 /** A vizsga hét manővere: kártyák felülnézeti vázlattal (kiinduló helyzet, útvonal, cél) */
 export function ManeuversPage() {
@@ -27,6 +29,30 @@ export function ManeuversPage() {
           </li>
         ))}
       </ul>
+
+      <div className="card">
+        <h2>Forgalmi helyzetek</h2>
+        <p>
+          A vizsgán gyakran előforduló, sokszor elrontott helyzetek lépésenként: mire figyelj, merre nézz, mikor jelezz, hol állj meg. Minden
+          lépésnél ott vannak a gyakori hibák is, a minősítő lap kódjával.
+        </p>
+      </div>
+      {GROUPS.map((g) => {
+        const list = SITUATIONS.filter((s) => s.group === g)
+        if (!list.length) return null
+        return (
+          <section key={g} className="situation-group">
+            <h2>{GROUP_TITLE[g]}</h2>
+            <ul className="maneuver-grid">
+              {list.map((s) => (
+                <li key={s.id}>
+                  <SituationCard lesson={s} />
+                </li>
+              ))}
+            </ul>
+          </section>
+        )
+      })}
     </section>
   )
 }

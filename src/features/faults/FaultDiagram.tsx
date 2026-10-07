@@ -8,7 +8,7 @@ import { CAR, carToWorld, wheelAngle } from '../../domain/maneuvers/geometry'
 import type { LightState } from '../../domain/questions'
 import type { LessonClock } from './clock'
 
-const PHASE_COLOR: Record<Phase, string> = { setup: '#2563eb', wrong: '#dc2626', right: '#16a34a' }
+const PHASE_COLOR: Record<Phase, string> = { setup: '#2563eb', wrong: '#dc2626', right: '#16a34a', step: '#2563eb' }
 
 const LAMP_ON: Record<string, string> = { red: '#ef4444', yellow: '#facc15', green: '#22c55e' }
 const LAMP_OFF = '#1f2937'
@@ -96,6 +96,28 @@ function ActorShape({ a }: { a: Actor }) {
           <circle r={0.26} cy={0.05} fill={a.color ?? '#f59e0b'} stroke="#111827" strokeWidth={0.04} />
         </>
       )
+    case 'train': {
+      const [w, d] = BODY_SIZE.train
+      return (
+        <>
+          <rect x={-w / 2} y={-d / 2} width={w} height={d} rx={0.3} fill="#1e3a8a" stroke="#111827" strokeWidth={0.06} />
+          {[-d / 2 + 17.5, -d / 2 + 37].map((y) => (
+            <rect key={y} x={-w / 2} y={y} width={w} height={0.5} fill="#0f172a" />
+          ))}
+        </>
+      )
+    }
+    case 'tram': {
+      const [w, d] = BODY_SIZE.tram
+      return (
+        <>
+          <rect x={-w / 2} y={-d / 2} width={w} height={d} rx={0.4} fill="#facc15" stroke="#111827" strokeWidth={0.06} />
+          {[-1, 0, 1].map((k) => (
+            <rect key={k} x={-w / 2} y={(k * d) / 4 - 0.15} width={w} height={0.3} fill="#a16207" />
+          ))}
+        </>
+      )
+    }
     case 'ped':
       return (
         <>
@@ -110,6 +132,8 @@ interface Props {
   clock: LessonClock
   step: number
   className?: string
+  /** Állókép (bélyegkép): nincs képkockánkénti frissítés, és a teljes helyszín látszik */
+  still?: boolean
 }
 
 /**
@@ -117,7 +141,7 @@ interface Props {
  * a lépés pillanatnyi állapotában, irányjelzővel; a saját autó útja a lépés színével (kék: helyzet, piros: hibás,
  * zöld: helyes), és a lépés jelölései (élő távolság, kiemelt terület, felirat). Hosszú útnál a nézet követi a kocsit.
  */
-export function FaultDiagram({ clock, step, className }: Props) {
+export function FaultDiagram({ clock, step, className, still = false }: Props) {
   const lesson = clock.lesson
   const { world, actors } = lesson
   const svg = useRef<SVGSVGElement>(null)
@@ -136,6 +160,7 @@ export function FaultDiagram({ clock, step, className }: Props) {
   )
 
   useEffect(() => {
+    if (still) return
     let raf = 0
     const draw = (now: number) => {
       const f = clock.now()
@@ -166,6 +191,16 @@ export function FaultDiagram({ clock, step, className }: Props) {
         }
         if (a.kind === 'ambulance') el.querySelector('[data-siren]')?.setAttribute('fill', Math.floor(now / 160) % 2 ? '#1e3a8a' : '#60a5fa')
       }
+      if (world.rail) {
+        const alt = Math.floor(now / 280) % 2 === 0
+        const slow = Math.floor(now / 560) % 2 === 0
+        svg.current?.querySelectorAll<SVGCircleElement>('[data-rl]').forEach((c) => {
+          const k = c.dataset.rl
+          const lit = k === 'w' ? f.rail === 'white_flash' && slow : f.rail === 'red_flash' && (k === 'l' ? alt : !alt)
+          c.setAttribute('fill', lit ? (k === 'w' ? '#f8fafc' : '#ef4444') : LAMP_OFF)
+        })
+        svg.current?.querySelector('[data-arm]')?.setAttribute('visibility', f.barrier ? 'visible' : 'hidden')
+      }
       svg.current?.querySelectorAll<SVGGElement>('[data-light]').forEach((g) => {
         const state = f.signals[g.dataset.light!] ?? 'red'
         const lit = lampsLit(state)
@@ -174,6 +209,9 @@ export function FaultDiagram({ clock, step, className }: Props) {
           const flashOff = state === 'flashing_yellow' && !on
           c.setAttribute('fill', lit[lamp] && !flashOff ? LAMP_ON[lamp] : LAMP_OFF)
         })
+      })
+      svg.current?.querySelectorAll<SVGGElement>('[data-arrow]').forEach((g) => {
+        g.querySelector('path')?.setAttribute('fill', f.signals[g.dataset.arrow!] === 'green' ? '#22c55e' : LAMP_OFF)
       })
       svg.current?.querySelectorAll<SVGGElement>('[data-gap]').forEach((g) => {
         const [ia, ib] = g.dataset.gap!.split('|')
@@ -206,17 +244,17 @@ export function FaultDiagram({ clock, step, className }: Props) {
     }
     raf = requestAnimationFrame(draw)
     return () => cancelAnimationFrame(raf)
-  }, [clock, actors, own, world.view, world.night, w, n, e, s])
+  }, [clock, actors, own, world.view, world.night, world.rail, w, n, e, s, still])
 
   const f0 = clock.now()
-  const viewBox = world.view ? `${w} ${n} ${Math.min(world.view[0], e - w)} ${Math.min(world.view[1], s - n)}` : `${w} ${n} ${e - w} ${s - n}`
+  const viewBox = world.view && !still ? `${w} ${n} ${Math.min(world.view[0], e - w)} ${Math.min(world.view[1], s - n)}` : `${w} ${n} ${e - w} ${s - n}`
   const colour = PHASE_COLOR[current.phase]
   // Feliratméret: a látható szélesség kb. 1/24-e, 0,7 és 2,2 m között
   const viewW = world.view ? Math.min(world.view[0], e - w) : e - w
   const fontSize = Math.min(2.2, Math.max(0.7, viewW / 24))
 
   return (
-    <svg ref={svg} viewBox={viewBox} className={`maneuver-diagram fault-diagram ${className ?? ''}`} style={{ '--fd-fs': `${fontSize}px` } as React.CSSProperties} role="img" aria-label={`${lesson.code} felülnézetben`}>
+    <svg ref={svg} viewBox={viewBox} className={`maneuver-diagram fault-diagram ${className ?? ''}`} style={{ '--fd-fs': `${fontSize}px` } as React.CSSProperties} role="img" aria-label={`${lesson.title}: felülnézet`}>
       <rect x={w - 50} y={n - 50} width={e - w + 100} height={s - n + 100} fill="#cfe3c6" />
       {(world.buildings ?? []).map((b, i) => (
         <rect key={`b${i}`} x={b.x - b.w / 2} y={b.z - b.d / 2} width={b.w} height={b.d} fill="#d8d2c4" stroke="#b9b2a2" strokeWidth={0.1} />
@@ -224,6 +262,36 @@ export function FaultDiagram({ clock, step, className }: Props) {
       {world.asphalt.map((r, i) => (
         <SiteBox key={`a${i}`} r={r} fill="#6b7280" />
       ))}
+      {world.ring && (
+        <g>
+          <circle r={world.ring.outer} fill="#6b7280" />
+          <circle r={world.ring.inner} fill="#b7d3a8" stroke="#d1d5db" strokeWidth={0.4} />
+          <circle r={world.ring.inner + 0.3} fill="none" stroke="#f9fafb" strokeWidth={0.15} />
+        </g>
+      )}
+      {(world.extras ?? []).map((x, i) =>
+        x.kind === 'island' ? (
+          <rect key={`x${i}`} x={x.x - x.w / 2} y={x.z - x.d / 2} width={x.w} height={x.d} fill="#cbd5e1" stroke="#94a3b8" strokeWidth={0.08} transform={x.rotY ? `rotate(${toDeg(-x.rotY)} ${x.x} ${x.z})` : undefined} />
+        ) : (
+          <g key={`x${i}`} transform={x.rotY ? `rotate(${toDeg(-x.rotY)} ${x.x} ${x.z})` : undefined}>
+            <rect x={x.x - 1.05} y={x.z - x.d / 2} width={2.1} height={x.d} fill="#4b5563" />
+            {[-0.72, 0.72].map((o) => (
+              <rect key={o} x={x.x + o - 0.05} y={x.z - x.d / 2} width={0.1} height={x.d} fill="#d1d5db" />
+            ))}
+          </g>
+        ),
+      )}
+      {world.rail && (
+        <g>
+          <rect x={w - 50} y={world.rail.z - 1.6} width={e - w + 100} height={3.2} fill="#8b8173" />
+          {Array.from({ length: Math.ceil((e - w + 100) / 2) }, (_, i) => (
+            <rect key={i} x={w - 50 + i * 2} y={world.rail!.z - 1.3} width={0.25} height={2.6} fill="#5b4632" />
+          ))}
+          {[-0.72, 0.72].map((o) => (
+            <rect key={o} x={w - 50} y={world.rail!.z + o - 0.05} width={e - w + 100} height={0.1} fill="#d1d5db" />
+          ))}
+        </g>
+      )}
       {world.sidewalks.map((r, i) => (
         <SiteBox key={`s${i}`} r={r} fill="#d1d5db" />
       ))}
@@ -273,12 +341,32 @@ export function FaultDiagram({ clock, step, className }: Props) {
           <SignGlyph code={sg.code} size={1.9} x={sg.x + (sg.x >= 0 ? 1.1 : -1.1)} y={sg.z} />
         </g>
       ))}
+      {world.rail?.lightAt && (
+        <g data-rail transform={`translate(${world.rail.lightAt.x + 0.6} ${world.rail.lightAt.z})`}>
+          <rect x={-0.9} y={-0.5} width={1.8} height={1.0} rx={0.2} fill="#111827" />
+          <circle data-rl="l" cx={-0.45} r={0.3} fill={LAMP_OFF} />
+          <circle data-rl="r" cx={0.45} r={0.3} fill={LAMP_OFF} />
+          <circle data-rl="w" cy={0.95} r={0.3} fill={LAMP_OFF} stroke="#111827" strokeWidth={0.2} />
+        </g>
+      )}
+      {world.rail?.barrier && (
+        <g data-barrier transform={`translate(${world.rail.barrier.x} ${world.rail.barrier.z})`}>
+          <circle r={0.35} fill="#e5e7eb" stroke="#111827" strokeWidth={0.06} />
+          <rect data-arm x={-world.rail.barrier.length} y={-0.08} width={world.rail.barrier.length} height={0.16} fill="#dc2626" stroke="#f9fafb" strokeWidth={0.05} strokeDasharray="0.6 0.6" />
+        </g>
+      )}
       {(world.lights ?? []).map((l, i) => (
         <g key={`l${i}`} data-light={l.id} transform={`translate(${l.x + 0.6} ${l.z})`}>
           <rect x={-0.42} y={-1.15} width={0.84} height={2.3} rx={0.2} fill="#111827" />
           {(['red', 'yellow', 'green'] as const).map((c, j) => (
             <circle key={c} data-lamp={c} cy={-0.72 + j * 0.72} r={0.28} fill={LAMP_OFF} />
           ))}
+          {l.arrow && (
+            <g data-arrow={l.arrow} transform="translate(0.9 0.72)">
+              <rect x={-0.4} y={-0.4} width={0.8} height={0.8} rx={0.15} fill="#111827" />
+              <path d="M-0.25 -0.12 L0.05 -0.12 L0.05 -0.28 L0.3 0 L0.05 0.28 L0.05 0.12 L-0.25 0.12 Z" fill={LAMP_OFF} />
+            </g>
+          )}
         </g>
       ))}
       {actors.map((a) => {

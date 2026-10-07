@@ -1,13 +1,13 @@
 import type { StepClock } from '../../components/player/useStepPlayer'
 import { frameAt, stepMs, stepStates, type Frame, type StepState } from '../../domain/faults/timeline'
-import type { FaultLesson } from '../../domain/faults/types'
+import type { Lesson } from '../../domain/faults/types'
 
 /**
  * Egy hibakód-lecke lejátszása: melyik lépésnél tart és azon belül hol. A felülnézet, a 3D nézet és a műszerfal
  * minden képkockánál innen kérdezi le a jelenet állapotát, így a React-állapot csak lépésváltáskor változik.
  */
 export class LessonClock implements StepClock {
-  readonly lesson: FaultLesson
+  readonly lesson: Lesson
   readonly states: StepState[]
   step = 0
   progress = 1
@@ -16,7 +16,7 @@ export class LessonClock implements StepClock {
   private startedAt = 0
   private cache: { step: number; progress: number; frame: Frame } | null = null
 
-  constructor(lesson: FaultLesson) {
+  constructor(lesson: Lesson) {
     this.lesson = lesson
     this.states = stepStates(lesson)
   }

@@ -1,7 +1,7 @@
 import { endOf, pathLength, poseAlong, steerTurns, type Pose, type Segment } from '../maneuvers/geometry'
 import type { Look } from '../maneuvers/types'
-import type { LightState } from '../questions'
-import type { Blink, ControlState, FaultLesson, FaultStep, Track } from './types'
+import type { LightState, RailLight } from '../questions'
+import type { Blink, ControlState, FaultStep, Lesson, Track } from './types'
 
 /**
  * A leckék időzítése: egy lépés adott pillanatában hol vannak a szereplők, mit mutatnak a műszerek és a lámpák.
@@ -51,6 +51,8 @@ export interface StepState {
   signals: Record<string, LightState>
   blinks: Record<string, Blink>
   look: Look
+  rail: RailLight
+  barrier: boolean
 }
 
 function last<T>(track: Track<T> | undefined, fallback: T): T {
@@ -69,16 +71,18 @@ export function endState(base: StepState, step: FaultStep): StepState {
   for (const [id, tr] of Object.entries(step.signals ?? {})) signals[id] = last(tr, signals[id])
   const blinks = { ...base.blinks }
   for (const [id, tr] of Object.entries(step.blinks ?? {})) blinks[id] = last(tr, blinks[id] ?? 'off')
-  return { poses, controls, signals, blinks, look: last(step.look, base.look) }
+  return { poses, controls, signals, blinks, look: last(step.look, base.look), rail: last(step.rail, base.rail), barrier: last(step.barrier, base.barrier) }
 }
 
-export function initialState(lesson: FaultLesson): StepState {
+export function initialState(lesson: Lesson): StepState {
   return {
     poses: Object.fromEntries(lesson.actors.map((a) => [a.id, a.start])),
     controls: { ...DEFAULT_CONTROLS },
-    signals: Object.fromEntries((lesson.world.lights ?? []).map((l) => [l.id, 'red' as LightState])),
+    signals: Object.fromEntries((lesson.world.lights ?? []).flatMap((l) => [[l.id, 'red' as LightState], ...(l.arrow ? [[l.arrow, 'red' as LightState]] : [])])),
     blinks: {},
     look: 'ahead',
+    rail: 'white_flash',
+    barrier: false,
   }
 }
 
@@ -86,13 +90,13 @@ export function initialState(lesson: FaultLesson): StepState {
  * Minden lépés kezdőállapota. A helyzet lépései egymás után következnek; a hibás és a helyes ág első lépése
  * egyaránt a helyzet végéről indul (az ágon belül a lépések ismét egymásra épülnek).
  */
-export function stepStates(lesson: FaultLesson): StepState[] {
+export function stepStates(lesson: Lesson): StepState[] {
   const out: StepState[] = []
   let cur = initialState(lesson)
   let setupEnd = cur
   lesson.steps.forEach((s, i) => {
     const prev = lesson.steps[i - 1]
-    if (s.phase !== 'setup' && (!prev || prev.phase !== s.phase)) cur = setupEnd
+    if ((s.phase === 'wrong' || s.phase === 'right') && (!prev || prev.phase !== s.phase)) cur = setupEnd
     out.push(cur)
     cur = endState(cur, s)
     if (s.phase === 'setup') setupEnd = cur
@@ -121,10 +125,12 @@ export interface Frame {
   controls: ControlState
   signals: Record<string, LightState>
   look: Look
+  rail: RailLight
+  barrier: boolean
 }
 
 /** A jelenet állapota a lépés t (0..1) pillanatában */
-export function frameAt(lesson: FaultLesson, base: StepState, step: FaultStep, t: number): Frame {
+export function frameAt(lesson: Lesson, base: StepState, step: FaultStep, t: number): Frame {
   const actors: Record<string, ActorFrame> = {}
   for (const a of lesson.actors) {
     const m = step.moves?.[a.id]
@@ -150,7 +156,14 @@ export function frameAt(lesson: FaultLesson, base: StepState, step: FaultStep, t
   if (controls.rpm < 0) controls.rpm = autoRpm(controls)
   const signals = { ...base.signals }
   for (const [id, tr] of Object.entries(step.signals ?? {})) signals[id] = sample(tr, t)
-  return { actors, controls, signals, look: step.look ? sample(step.look, t) : base.look }
+  return {
+    actors,
+    controls,
+    signals,
+    look: step.look ? sample(step.look, t) : base.look,
+    rail: step.rail ? sample(step.rail, t) : base.rail,
+    barrier: step.barrier ? sample(step.barrier, t) : base.barrier,
+  }
 }
 
 /** km/h ezer fordulatonként fokozatonként (egy átlagos kisautó) */
