@@ -95,7 +95,7 @@ export default function ManeuverScene3D({ site, poseNow, look, refLine, reversin
           ))}
         </>
       )}
-      {lookingBack && <div className="look-back">Hátrafelé nézel, a {LOOK_YAW[look] > 0 ? 'jobb' : 'bal'} vállad fölött</div>}
+      {lookingBack && <div className="look-back">👁 hátra, {LOOK_YAW[look] > 0 ? 'jobb' : 'bal'} váll fölött</div>}
       {reversing && <div className="gear-badge">R</div>}
     </div>
   )

@@ -1788,16 +1788,29 @@ a.fault-item:hover {
   border-color: #f59e0b;
   box-shadow: 0 0 0 3px rgb(245 158 11 / 45%);
 }
+/* Egysoros, kicsi címke az R jelvény mellett; a jobb felső felülnézet-betétig nem ér el */
 .look-back {
   position: absolute;
-  top: 12px;
-  left: 68px;
+  top: 21px;
+  left: 64px;
   z-index: 4;
-  padding: 6px 14px;
-  border-radius: 10px;
+  max-width: calc(58% - 60px);
+  padding: 3px 9px;
+  border-radius: 8px;
   background: rgb(15 23 42 / 75%);
   color: #fff;
+  font-size: 0.8rem;
   font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* A leckéken a bal felső sarokban a fázis-sáv van: a címke alulra, a „Kívülről” gomb fölé kerül */
+.fault-page .look-back {
+  top: auto;
+  bottom: 50px;
+  left: 12px;
+  max-width: calc(58% - 24px);
 }
 .gear-badge {
   position: absolute;
@@ -1813,6 +1826,18 @@ a.fault-item:hover {
   color: #fff;
   font-size: 1.4rem;
   font-weight: 800;
+}
+/* A kis betétablakban (felülnézet a fő) csak egy apró R; a nézés iránya a panel státuszában látszik */
+.pane-inset .look-back {
+  display: none;
+}
+.pane-inset .gear-badge {
+  top: 6px;
+  left: 6px;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  font-size: 0.8rem;
 }
 
 @media (max-width: 860px) {
@@ -1887,6 +1912,18 @@ a.fault-item:hover {
   .drive.maneuver-page {
     height: calc(100dvh - var(--topbar-h) - env(safe-area-inset-top, 0px));
     min-height: 0;
+  }
+  .pane-main .gear-badge {
+    top: 8px;
+    left: 8px;
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    font-size: 1.05rem;
+  }
+  .maneuver-page:not(.fault-page) .look-back {
+    top: 12px;
+    left: 48px;
   }
   .maneuver-page .drive-top {
     padding: 6px 12px;
