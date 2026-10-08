@@ -1467,6 +1467,11 @@ tr.meh td:first-child {
   flex-direction: column;
   gap: 12px;
 }
+.player-head {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
 .maneuver-controls {
   display: flex;
   flex-wrap: wrap;
@@ -1873,6 +1878,73 @@ a.fault-item:hover {
     top: 8px;
     left: 8px;
     font-size: 0.85rem;
+  }
+}
+
+/* Manőver- és lecke-lejátszó telefonon: az oldal nem görget, felül a nézet, alatta a saját görgetésű panel —
+   így a 3D kép és az aktuális lépés instrukciója egyszerre látszik */
+@media (max-width: 860px) {
+  .drive.maneuver-page {
+    height: calc(100dvh - var(--topbar-h) - env(safe-area-inset-top, 0px));
+    min-height: 0;
+  }
+  .maneuver-page .drive-top {
+    padding: 6px 12px;
+    gap: 8px;
+  }
+  .maneuver-page .drive-grid {
+    grid-template-rows: 38dvh minmax(0, 1fr);
+  }
+  .maneuver-page .drive-side {
+    padding: 0 12px 10px;
+    gap: 8px;
+  }
+  /* A gombok és a státusz a panel tetején maradnak, alattuk görget a lépéslista */
+  .player-head {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    gap: 8px;
+    margin: 0 -12px;
+    padding: 10px 12px 8px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .maneuver-controls {
+    flex-wrap: nowrap;
+  }
+  .maneuver-controls .btn {
+    min-height: 34px;
+    padding: 4px 12px;
+  }
+  .maneuver-controls .btn.primary {
+    flex: 1;
+  }
+  .maneuver-controls .ctl-label {
+    display: none;
+  }
+  .maneuver-status {
+    gap: 6px;
+    font-size: 0.85rem;
+  }
+  .maneuver-status .gear {
+    width: 28px;
+    height: 28px;
+    font-size: 0.95rem;
+  }
+  .maneuver-status .steer-icon {
+    width: 24px;
+    height: 24px;
+  }
+  .step-head {
+    padding: 7px 10px;
+  }
+  .step-body {
+    padding: 0 10px 10px 12px;
+    font-size: 0.92rem;
+  }
+  .step-body ol {
+    gap: 4px;
   }
 }
 

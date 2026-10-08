@@ -1,6 +1,7 @@
-import { Suspense, useEffect, useMemo, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { LOOK_LABEL } from '../../components/player/looks'
 import { StepControls } from '../../components/player/StepControls'
+import { revealStep } from '../../components/player/revealStep'
 import { useStepPlayer } from '../../components/player/useStepPlayer'
 import { Wheel } from '../../components/player/Wheel'
 import { Fallback, ManeuverScene3D } from '../../components/scene3d'
@@ -34,6 +35,11 @@ export function ManeuverPage({ id }: { id: string }) {
   useEffect(() => {
     getSettings().then((s) => setView3d(s.view3d))
   }, [])
+  // Lejátszás közben az aktív lépés a lépéslistán belül látható marad (mobilon a panel kicsi)
+  const activeRef = useRef<HTMLLIElement>(null)
+  useEffect(() => {
+    if (activeRef.current) revealStep(activeRef.current)
+  }, [step])
 
   if (!maneuver || !clock) {
     return (
@@ -104,23 +110,24 @@ export function ManeuverPage({ id }: { id: string }) {
         </div>
 
         <div className="drive-side maneuver-side">
-          <StepControls step={step} count={maneuver.steps.length} playing={playing} speed={speed} setSpeed={setSpeed} go={go} allTitle="A teljes manőver lejátszása az elejétől" />
-
-          <div className="maneuver-status" aria-live="polite">
-            <span className={`gear ${current.gear === 'R' ? 'rev' : ''}`} title="Sebességfokozat">
-              {current.gear === 'R' ? 'R' : current.gear === 'N' ? 'N' : '1'}
-            </span>
-            <span className="steer" title="Kormány">
-              <Wheel turns={steer.turns} />
-              {steer.text}
-            </span>
-            {current.indicator && <span className="badge indicator">{current.indicator === 'left' ? '◀ index balra' : 'index jobbra ▶'}</span>}
-            <span className="badge">👁 {LOOK_LABEL[current.look]}</span>
+          <div className="player-head">
+            <StepControls step={step} count={maneuver.steps.length} playing={playing} speed={speed} setSpeed={setSpeed} go={go} allTitle="A teljes manőver lejátszása az elejétől" />
+            <div className="maneuver-status" aria-live="polite">
+              <span className={`gear ${current.gear === 'R' ? 'rev' : ''}`} title="Sebességfokozat">
+                {current.gear === 'R' ? 'R' : current.gear === 'N' ? 'N' : '1'}
+              </span>
+              <span className="steer" title="Kormány">
+                <Wheel turns={steer.turns} />
+                {steer.text}
+              </span>
+              {current.indicator && <span className="badge indicator">{current.indicator === 'left' ? '◀ index balra' : 'index jobbra ▶'}</span>}
+              <span className="badge">👁 {LOOK_LABEL[current.look]}</span>
+            </div>
           </div>
 
           <ol className="maneuver-steps">
             {maneuver.steps.map((s, i) => (
-              <li key={i} className={i === step ? 'active' : i < step ? 'done' : ''}>
+              <li key={i} ref={i === step ? activeRef : undefined} className={i === step ? 'active' : i < step ? 'done' : ''}>
                 <button className="step-head" onClick={() => go(i, true)}>
                   <span className="step-no">{i + 1}</span>
                   {s.title}

@@ -1,7 +1,8 @@
-import { Suspense, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { CodeLink } from '../../components/CodeLink'
 import { LOOK_LABEL } from '../../components/player/looks'
 import { StepControls } from '../../components/player/StepControls'
+import { revealStep } from '../../components/player/revealStep'
 import { useStepPlayer } from '../../components/player/useStepPlayer'
 import { Fallback, FaultScene3D } from '../../components/scene3d'
 import { webglAvailable } from '../../components/scene3d/webgl'
@@ -40,6 +41,11 @@ export function LessonPlayer({ lesson, badge, back, banner, allTitle, phaseChips
   useEffect(() => {
     getSettings().then((s) => setView3d(s.view3d))
   }, [])
+  // Lejátszás közben az aktív lépés a lépéslistán belül látható marad (mobilon a panel kicsi)
+  const activeRef = useRef<HTMLLIElement>(null)
+  useEffect(() => {
+    if (activeRef.current) revealStep(activeRef.current)
+  }, [step])
 
   const current = lesson.steps[step]
   const diagram = <FaultDiagram clock={clock} step={step} className="maneuver-live" />
@@ -104,16 +110,18 @@ export function LessonPlayer({ lesson, badge, back, banner, allTitle, phaseChips
         </div>
 
         <div className="drive-side maneuver-side">
-          <StepControls step={step} count={lesson.steps.length} playing={playing} speed={speed} setSpeed={setSpeed} go={go} allTitle={allTitle} />
+          <div className="player-head">
+            <StepControls step={step} count={lesson.steps.length} playing={playing} speed={speed} setSpeed={setSpeed} go={go} allTitle={allTitle} />
+            <div className="maneuver-status">
+              <span className="badge">👁 {looks.join(' → ')}</span>
+            </div>
+          </div>
 
           <Dashboard clock={clock} />
-          <div className="maneuver-status">
-            <span className="badge">👁 {looks.join(' → ')}</span>
-          </div>
 
           <ol className="maneuver-steps">
             {lesson.steps.map((s, i) => (
-              <li key={i} className={`${i === step ? 'active' : i < step ? 'done' : ''} phase-${s.phase}`}>
+              <li key={i} ref={i === step ? activeRef : undefined} className={`${i === step ? 'active' : i < step ? 'done' : ''} phase-${s.phase}`}>
                 <button className="step-head" onClick={() => go(i, true)}>
                   <span className="step-no">{i + 1}</span>
                   {phaseChips && <span className={`phase-chip ${s.phase}`}>{PHASE_LABEL[s.phase]}</span>}
