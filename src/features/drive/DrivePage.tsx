@@ -4,6 +4,8 @@ import { MapView, type FlyAlong, type MapPin } from '../../components/MapView'
 import { SceneView } from '../../components/SceneView'
 import { DriveScene } from '../../components/scene3d'
 import { preloadScene3D } from '../../components/scene3d/load'
+import { InsetButtons, InsetShow } from '../../components/InsetButtons'
+import { useDraggableInset } from '../../components/useDraggableInset'
 import { approachFrames, type MlImage } from '../../data/mapillary'
 import { describeExpected, expectedActions, scoreActions, type ActionEvent, type ActionKind, type ActionResult } from '../../domain/actions'
 import { EVAL_CODES } from '../../domain/evalCodes'
@@ -120,6 +122,7 @@ export function DrivePage({ routeId, mode, focus }: Props) {
   const [voiceError, setVoiceError] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [mainView, setMainView] = useState<'scene' | 'map'>('scene')
+  const { ref: insetBox, hidden: insetHidden, setHidden: setInsetHidden } = useDraggableInset<HTMLDivElement>()
   // Mozdulat-gyakorlás (tükör, index, fék) és a teljes útvonal vizsgabiztosa
   const [actionsOn, setActionsOn] = useState(false)
   const [examinerOn, setExaminerOn] = useState(true)
@@ -572,11 +575,7 @@ export function DrivePage({ routeId, mode, focus }: Props) {
       ) : (
         <div className="scene-wait">A 3D nézet a következő helyzet előtt jelenik meg</div>
       )}
-      {mainView !== 'scene' && (
-        <button className="pane-swap" onClick={() => setMainView('scene')} aria-label="3D nézet nagyban">
-          ⤢
-        </button>
-      )}
+      {mainView !== 'scene' && <InsetButtons swapLabel="3D nézet nagyban" onSwap={() => setMainView('scene')} onHide={() => setInsetHidden(true)} />}
     </div>
   )
   const mapPane = (
@@ -603,11 +602,7 @@ export function DrivePage({ routeId, mode, focus }: Props) {
           </figcaption>
         </figure>
       )}
-      {mainView !== 'map' && (
-        <button className="pane-swap" onClick={() => setMainView('map')} aria-label="Térkép nagyban">
-          ⤢
-        </button>
-      )}
+      {mainView !== 'map' && <InsetButtons swapLabel="Térkép nagyban" onSwap={() => setMainView('map')} onHide={() => setInsetHidden(true)} />}
     </div>
   )
 
@@ -627,9 +622,10 @@ export function DrivePage({ routeId, mode, focus }: Props) {
       </header>
 
       <div className="drive-grid">
-        <div className="drive-visual">
+        <div className={`drive-visual${insetHidden ? ' inset-hidden' : ''}`} ref={insetBox}>
           {scenePane}
           {mapPane}
+          {insetHidden && <InsetShow label={mainView === 'scene' ? 'Térkép' : '3D'} onShow={() => setInsetHidden(false)} />}
           {phase === 'approach' && drill && <ActionBar pressed={pressed} onAct={act} />}
         </div>
 

@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
 import { MapView, type MapPin } from '../../components/MapView'
 import { DriveScene } from '../../components/scene3d'
+import { InsetButtons, InsetShow } from '../../components/InsetButtons'
+import { useDraggableInset } from '../../components/useDraggableInset'
 import type { Scene } from '../../domain/questions'
 import { formatDistance } from '../../lib/format'
 import { flyPath } from '../drive/fly'
@@ -25,6 +27,7 @@ const FLY_AFTER_M = 5
  */
 export function RoadSignView({ place, phase, approachMs, view3d, terrain }: Props) {
   const [mainView, setMainView] = useState<'scene' | 'map'>('scene')
+  const { ref: insetBox, hidden: insetHidden, setHidden: setInsetHidden } = useDraggableInset<HTMLDivElement>()
   const { sign, line } = place
   const key = `${place.routeId}:${sign.code}:${Math.round(sign.d)}`
   const scene = useMemo<Scene>(() => ({ layout: 'road', turn: 'straight', cars: [], roadSign: sign.code }), [sign.code])
@@ -34,11 +37,7 @@ export function RoadSignView({ place, phase, approachMs, view3d, terrain }: Prop
   const scenePane = (
     <div className={`pane ${mainView === 'scene' ? 'pane-main' : 'pane-inset'}`}>
       <DriveScene key={key} scene={scene} animate approachMs={approachMs} enabled={view3d} />
-      {mainView !== 'scene' && (
-        <button className="pane-swap" onClick={() => setMainView('scene')} aria-label="3D nézet nagyban">
-          ⤢
-        </button>
-      )}
+      {mainView !== 'scene' && <InsetButtons swapLabel="3D nézet nagyban" onSwap={() => setMainView('scene')} onHide={() => setInsetHidden(true)} />}
     </div>
   )
   const mapPane = (
@@ -54,18 +53,15 @@ export function RoadSignView({ place, phase, approachMs, view3d, terrain }: Prop
         flyAlong={phase === 'flash' ? fly : null}
         focus={phase === 'flash' && fly ? null : { lngLat: sign.lngLat, zoom: 18, pitch: 60, key }}
       />
-      {mainView !== 'map' && (
-        <button className="pane-swap" onClick={() => setMainView('map')} aria-label="Térkép nagyban">
-          ⤢
-        </button>
-      )}
+      {mainView !== 'map' && <InsetButtons swapLabel="Térkép nagyban" onSwap={() => setMainView('map')} onHide={() => setInsetHidden(true)} />}
     </div>
   )
 
   return (
-    <div className="drive-visual">
+    <div className={`drive-visual${insetHidden ? ' inset-hidden' : ''}`} ref={insetBox}>
       {scenePane}
       {mapPane}
+      {insetHidden && <InsetShow label={mainView === 'scene' ? 'Térkép' : '3D'} onShow={() => setInsetHidden(false)} />}
       <p className="road-place">
         {place.routeName || 'Névtelen útvonal'} · {formatDistance(sign.d)}
       </p>

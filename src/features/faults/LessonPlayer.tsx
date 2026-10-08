@@ -6,6 +6,8 @@ import { revealStep } from '../../components/player/revealStep'
 import { useStepPlayer } from '../../components/player/useStepPlayer'
 import { Fallback, FaultScene3D } from '../../components/scene3d'
 import { webglAvailable } from '../../components/scene3d/webgl'
+import { InsetButtons, InsetShow } from '../../components/InsetButtons'
+import { useDraggableInset } from '../../components/useDraggableInset'
 import type { FaultStep, Lesson } from '../../domain/faults/types'
 import { getSettings } from '../../db'
 import { LessonClock } from './clock'
@@ -37,6 +39,7 @@ export function LessonPlayer({ lesson, badge, back, banner, allTitle, phaseChips
   const [mainView, setMainView] = useState<'scene' | 'map'>('scene')
   const [view3d, setView3d] = useState(true)
   const [chase, setChase] = useState(false)
+  const { ref: insetBox, hidden: insetHidden, setHidden: setInsetHidden } = useDraggableInset<HTMLDivElement>()
 
   useEffect(() => {
     getSettings().then((s) => setView3d(s.view3d))
@@ -74,7 +77,7 @@ export function LessonPlayer({ lesson, badge, back, banner, allTitle, phaseChips
       </header>
 
       <div className="drive-grid">
-        <div className="drive-visual">
+        <div className={`drive-visual${insetHidden ? ' inset-hidden' : ''}`} ref={insetBox}>
           {use3d ? (
             <>
               <div className={`pane ${mainView === 'scene' ? 'pane-main' : 'pane-inset'}`}>
@@ -85,21 +88,14 @@ export function LessonPlayer({ lesson, badge, back, banner, allTitle, phaseChips
                     {chase ? 'Vezetőülés' : 'Kívülről'}
                   </button>
                 )}
-                {mainView !== 'scene' && (
-                  <button className="pane-swap" onClick={() => setMainView('scene')} aria-label="3D nézet nagyban">
-                    ⤢
-                  </button>
-                )}
+                {mainView !== 'scene' && <InsetButtons swapLabel="3D nézet nagyban" onSwap={() => setMainView('scene')} onHide={() => setInsetHidden(true)} />}
               </div>
               <div className={`pane ${mainView === 'map' ? 'pane-main' : 'pane-inset'} diagram-pane`}>
                 {diagram}
                 {mainView === 'map' && strip}
-                {mainView !== 'map' && (
-                  <button className="pane-swap" onClick={() => setMainView('map')} aria-label="Felülnézet nagyban">
-                    ⤢
-                  </button>
-                )}
+                {mainView !== 'map' && <InsetButtons swapLabel="Felülnézet nagyban" onSwap={() => setMainView('map')} onHide={() => setInsetHidden(true)} />}
               </div>
+              {insetHidden && <InsetShow label={mainView === 'scene' ? 'Felülnézet' : '3D'} onShow={() => setInsetHidden(false)} />}
             </>
           ) : (
             <div className="pane pane-main diagram-pane">

@@ -958,8 +958,16 @@ kbd {
   border-radius: 12px;
   border: 2px solid rgb(255 255 255 / 85%);
   box-shadow: 0 6px 24px rgb(0 0 0 / 35%);
+  /* Áthúzható (useDraggableInset): az ujj húzása ne görgesse/nagyítsa az oldalt */
+  touch-action: none;
+  cursor: grab;
 }
-.pane-swap {
+.pane-inset.dragging {
+  cursor: grabbing;
+  box-shadow: 0 10px 32px rgb(0 0 0 / 50%);
+}
+.pane-swap,
+.pane-hide {
   position: absolute;
   top: 6px;
   right: 6px;
@@ -972,6 +980,33 @@ kbd {
   color: #fff;
   font-size: 1.1rem;
   cursor: pointer;
+}
+.pane-hide {
+  right: 44px;
+  font-weight: 800;
+}
+/* Elrejtett betétablak: csak a visszahozó gomb látszik, ott, ahol alaphelyzetben a betét */
+.inset-hidden > .pane-inset {
+  display: none;
+}
+.inset-show {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  z-index: 6;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: none;
+  background: rgb(0 0 0 / 60%);
+  color: #fff;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.maneuver-page .inset-show {
+  top: 12px;
+  bottom: auto;
 }
 .scene3d {
   position: absolute;
@@ -1896,6 +1931,10 @@ a.fault-item:hover {
   }
   .pane-inset {
     width: 40%;
+    right: 8px;
+    bottom: 8px;
+  }
+  .inset-show {
     right: 8px;
     bottom: 8px;
   }
